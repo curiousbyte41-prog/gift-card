@@ -16,12 +16,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ==================== CONFIGURATION ====================
-BOT_TOKEN = os.getenv('BOT_TOKEN', "8646034766:AAGXkMglnsc72ew1aGcFmWnZziwb8nfS2S8")
-ADMIN_ID = int(os.getenv('ADMIN_ID', 6185091342))
-MAIN_CHANNEL = os.getenv('MAIN_CHANNEL', "@gift_card_main")
-PROOF_CHANNEL = os.getenv('PROOF_CHANNEL', "@gift_card_log")
-ADMIN_CHANNEL_ID = int(os.getenv('ADMIN_CHANNEL_ID', -1003607749028))
-UPI_ID = os.getenv('UPI_ID', "helobiy41@ptyes")
+BOT_TOKEN = "8646034766:AAGXkMglnsc72ew1aGcFmWnZziwb8nfS2S8"
+ADMIN_ID = 6185091342
+MAIN_CHANNEL = "@gift_card_main"
+PROOF_CHANNEL = "@gift_card_log"
+ADMIN_CHANNEL_ID = -1003607749028
+UPI_ID = "helobiy41@ptyes"
 
 # Gift Card Data
 GIFT_CARDS = {
@@ -167,7 +167,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             # Create channel button
             keyboard = [[
-                InlineKeyboardButton("📢 JOIN OFFICIAL CHANNEL", url=f"https://t.me/gift_card_main")
+                InlineKeyboardButton("📢 JOIN OFFICIAL CHANNEL", url=f"https://t.me/gift_card_main"),
+                InlineKeyboardButton("✅ I HAVE JOINED", callback_data="verify")
             ]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
@@ -207,19 +208,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"❌ Start error: {e}")
         await update.message.reply_text("⚠️ Something went wrong. Please try again later.")
 
-# ==================== VERIFY AFTER JOIN ====================
-async def verify_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle the verify button click after user joins channel"""
+# ==================== VERIFY CALLBACK ====================
+async def verify_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
     user = query.from_user
-    
-    # Check if user has joined
     is_member = await check_membership(user.id, context)
     
     if is_member:
-        # User has joined, show main menu
         balance = get_user_balance(user.id)
         
         success_text = (
@@ -248,7 +245,6 @@ async def verify_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=reply_markup
         )
     else:
-        # User still hasn't joined
         fail_text = (
             f"❌ *VERIFICATION FAILED*\n\n"
             f"*You haven't joined our channel yet!*\n\n"
@@ -259,7 +255,7 @@ async def verify_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         keyboard = [[
             InlineKeyboardButton("📢 JOIN CHANNEL", url=f"https://t.me/gift_card_main"),
-            InlineKeyboardButton("🔄 VERIFY AGAIN", callback_data="verify_join")
+            InlineKeyboardButton("🔄 VERIFY AGAIN", callback_data="verify")
         ]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -269,7 +265,7 @@ async def verify_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=reply_markup
         )
 
-# ==================== CALLBACK HANDLER ====================
+# ==================== BUTTON CALLBACK ====================
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         query = update.callback_query
@@ -279,17 +275,16 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         data = query.data
         
         # Handle verify button separately
-        if data == "verify_join":
-            await verify_join(update, context)
+        if data == "verify":
+            await verify_callback(update, context)
             return
         
         # Check membership for all other actions
         is_member = await check_membership(user.id, context)
         if not is_member:
-            # User somehow bypassed verification
             keyboard = [[
                 InlineKeyboardButton("📢 JOIN CHANNEL", url=f"https://t.me/gift_card_main"),
-                InlineKeyboardButton("🔄 VERIFY", callback_data="verify_join")
+                InlineKeyboardButton("✅ VERIFY", callback_data="verify")
             ]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
@@ -374,7 +369,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             # Store purchase info
             context.user_data['purchase'] = {
-                'card_id': card_id,
                 'card_name': card['name'],
                 'value': value,
                 'price': price
@@ -386,7 +380,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"*Price:* ₹{price}\n"
                 f"*Your Balance:* ₹{balance}\n"
                 f"*New Balance:* ₹{balance - price}\n\n"
-                f"*📧 Please enter your GMAIL ID to receive the card:*\n"
+                f"*📧 Please enter your EMAIL ID to receive the card:*\n"
                 f"*(Example: example@gmail.com)*",
                 parse_mode=ParseMode.MARKDOWN
             )
@@ -397,7 +391,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif data == "topup":
             keyboard = [
                 [InlineKeyboardButton("📱 UPI PAYMENT", callback_data="upi")],
-                [InlineKeyboardButton("₿ CRYPTO (Soon)", callback_data="crypto")],
                 [InlineKeyboardButton("🔙 BACK", callback_data="main_menu")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -405,8 +398,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(
                 f"*💰 ADD MONEY TO WALLET*\n\n"
                 f"*Select payment method:*\n\n"
-                f"📱 *UPI* - Instant & Easy\n"
-                f"₿ *Crypto* - Coming Soon",
+                f"📱 *UPI* - Instant & Easy",
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=reply_markup
             )
@@ -424,15 +416,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             
             return AMOUNT
-        
-        elif data == "crypto":
-            await query.edit_message_text(
-                f"*₿ CRYPTO PAYMENT*\n\n"
-                f"*Coming Soon!* ⏳\n\n"
-                f"*Please use UPI for now.*\n\n"
-                f"👇 *Click below to go back*",
-                parse_mode=ParseMode.MARKDOWN
-            )
         
         # ========== BALANCE SECTION ==========
         elif data == "balance":
@@ -574,7 +557,7 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Create verify button
         keyboard = [
-            [InlineKeyboardButton("✅ I HAVE PAID", callback_data="verify_payment")],
+            [InlineKeyboardButton("✅ I HAVE PAID", callback_data="paid")],
             [InlineKeyboardButton("❌ CANCEL", callback_data="topup")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -610,8 +593,8 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ An error occurred. Please try again.")
         return ConversationHandler.END
 
-# ==================== VERIFY PAYMENT ====================
-async def verify_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ==================== PAID CALLBACK ====================
+async def paid_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         query = update.callback_query
         await query.answer()
@@ -628,7 +611,7 @@ async def verify_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         return SCREENSHOT
     except Exception as e:
-        logger.error(f"❌ Verify payment error: {e}")
+        logger.error(f"❌ Paid callback error: {e}")
         return ConversationHandler.END
 
 # ==================== SCREENSHOT HANDLER ====================
@@ -676,14 +659,14 @@ async def handle_utr(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Create admin message
         caption = (
-            f"*🔔 NEW PAYMENT VERIFICATION*\n\n"
-            f"*👤 User:* {user.first_name}\n"
-            f"*🆔 ID:* `{user.id}`\n"
-            f"*💰 Amount:* ₹{topup_data.get('amount', 0)}\n"
-            f"*💸 Fee:* ₹{topup_data.get('fee', 0)}\n"
-            f"*🎁 Credit:* ₹{topup_data.get('final_amount', 0)}\n"
-            f"*🔢 UTR:* `{utr}`\n"
-            f"*⏰ Time:* {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            f"🔔 *NEW PAYMENT VERIFICATION*\n\n"
+            f"👤 *User:* {user.first_name}\n"
+            f"🆔 *ID:* `{user.id}`\n"
+            f"💰 *Amount:* ₹{topup_data.get('amount', 0)}\n"
+            f"💸 *Fee:* ₹{topup_data.get('fee', 0)}\n"
+            f"🎁 *Credit:* ₹{topup_data.get('final_amount', 0)}\n"
+            f"🔢 *UTR:* `{utr}`\n"
+            f"⏰ *Time:* {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         )
         
         # Create approve/reject buttons
@@ -778,16 +761,29 @@ async def handle_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.MARKDOWN
         )
         
-        # Random proof (70% chance)
-        if random.random() < 0.7:
+        # Add transaction record
+        try:
+            conn = sqlite3.connect('bot_database.db')
+            c = conn.cursor()
+            c.execute('''INSERT INTO purchases 
+                         (user_id, card_type, card_value, price, email, status, timestamp)
+                         VALUES (?, ?, ?, ?, ?, ?, ?)''',
+                      (user.id, purchase['card_name'], purchase['value'], purchase['price'], 
+                       email, "completed", datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+            conn.commit()
+            conn.close()
+        except:
+            pass
+        
+        # Random proof (50% chance)
+        if random.random() < 0.5:
             try:
                 await context.bot.send_message(
                     chat_id=PROOF_CHANNEL,
                     text=(
-                        f"*⚡ NEW PURCHASE*\n\n"
+                        f"⚡ *NEW PURCHASE*\n\n"
                         f"*[User] bought* {purchase['card_name']} *₹{purchase['value']}*\n"
-                        f"*at {datetime.now().strftime('%I:%M %p')}*\n"
-                        f"*🆔 Order:* `{order_id}`"
+                        f"*at {datetime.now().strftime('%I:%M %p')}*"
                     ),
                     parse_mode=ParseMode.MARKDOWN
                 )
@@ -893,7 +889,7 @@ async def auto_proofs(context: ContextTypes.DEFAULT_TYPE):
         amount = random.choice(amounts)
         
         message = (
-            f"*⚡ NEW PURCHASE*\n\n"
+            f"⚡ *NEW PURCHASE*\n\n"
             f"*[User] bought* {card} *₹{amount}*\n"
             f"*at {datetime.now().strftime('%I:%M %p')}*"
         )
@@ -927,6 +923,20 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Update balance
             update_user_balance(user_id, new_balance)
             
+            # Add transaction record
+            try:
+                conn = sqlite3.connect('bot_database.db')
+                c = conn.cursor()
+                c.execute('''INSERT INTO transactions 
+                             (user_id, amount, type, status, utr, timestamp)
+                             VALUES (?, ?, ?, ?, ?, ?)''',
+                          (user_id, amount, "credit", "completed", utr, 
+                           datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                conn.commit()
+                conn.close()
+            except:
+                pass
+            
             # Notify user
             try:
                 await context.bot.send_message(
@@ -936,16 +946,16 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         f"*Amount:* ₹{amount} added to your balance\n"
                         f"*New Balance:* ₹{new_balance}\n"
                         f"*UTR:* `{utr}`\n\n"
-                        f"*Thank you for using our service!* 🙏",
-                        parse_mode=ParseMode.MARKDOWN
-                    )
+                        f"*Thank you for using our service!* 🙏"
+                    ),
+                    parse_mode=ParseMode.MARKDOWN
                 )
             except:
                 pass
             
             # Update admin message
             await query.edit_message_caption(
-                caption=query.message.caption + "\n\n*✅ APPROVED BY ADMIN*",
+                caption=query.message.caption + "\n\n✅ *APPROVED BY ADMIN*",
                 parse_mode=ParseMode.MARKDOWN
             )
         
@@ -970,7 +980,7 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             # Update admin message
             await query.edit_message_caption(
-                caption=query.message.caption + "\n\n*❌ REJECTED BY ADMIN*",
+                caption=query.message.caption + "\n\n❌ *REJECTED BY ADMIN*",
                 parse_mode=ParseMode.MARKDOWN
             )
     except Exception as e:
@@ -996,9 +1006,18 @@ def main():
         # Create application
         app = Application.builder().token(BOT_TOKEN).build()
         
-        # Conversation handler for UPI verification
-        upi_conv = ConversationHandler(
-            entry_points=[CallbackQueryHandler(verify_payment, pattern="^verify_payment$")],
+        # Conversation handler for amount input
+        amount_conv = ConversationHandler(
+            entry_points=[CallbackQueryHandler(button_callback, pattern="^upi$")],
+            states={
+                AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_amount)]
+            },
+            fallbacks=[CommandHandler("cancel", cancel)]
+        )
+        
+        # Conversation handler for payment verification
+        payment_conv = ConversationHandler(
+            entry_points=[CallbackQueryHandler(paid_callback, pattern="^paid$")],
             states={
                 SCREENSHOT: [
                     MessageHandler(filters.PHOTO, handle_screenshot),
@@ -1008,16 +1027,7 @@ def main():
             fallbacks=[CommandHandler("cancel", cancel)]
         )
         
-        # Conversation handler for amount
-        amount_handler = ConversationHandler(
-            entry_points=[CallbackQueryHandler(button_callback, pattern="^upi$")],
-            states={
-                AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_amount)]
-            },
-            fallbacks=[CommandHandler("cancel", cancel)]
-        )
-        
-        # Conversation handler for email
+        # Conversation handler for email input
         email_conv = ConversationHandler(
             entry_points=[CallbackQueryHandler(button_callback, pattern="^buy_")],
             states={
@@ -1029,17 +1039,16 @@ def main():
         # Add handlers
         app.add_handler(CommandHandler("start", start))
         app.add_handler(CommandHandler("broadcast", broadcast))
-        app.add_handler(upi_conv)
-        app.add_handler(amount_handler)
+        app.add_handler(amount_conv)
+        app.add_handler(payment_conv)
         app.add_handler(email_conv)
         app.add_handler(CallbackQueryHandler(admin_callback, pattern="^(approve_|reject_)"))
         app.add_handler(CallbackQueryHandler(button_callback))
         app.add_error_handler(error_handler)
         
         # Auto proofs job (every 30-60 seconds)
-        job_queue = app.job_queue
-        if job_queue:
-            job_queue.run_repeating(auto_proofs, interval=random.randint(30, 60), first=10)
+        if app.job_queue:
+            app.job_queue.run_repeating(auto_proofs, interval=random.randint(30, 60), first=10)
         
         logger.info("✅ Bot started successfully!")
         print("╔════════════════════════════════════╗")
