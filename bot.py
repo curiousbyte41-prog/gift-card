@@ -23,8 +23,8 @@ PROOF_CHANNEL = "@gift_card_log"
 ADMIN_CHANNEL_ID = -1003607749028
 UPI_ID = "helobiy41@ptyes"
 
-# QR Code file path (you'll upload this)
-QR_CODE_PATH = "qr.jpg"  # Make sure to upload this file
+# QR Code file path
+QR_CODE_PATH = "qr.jpg"
 
 # Gift Card Data
 GIFT_CARDS = {
@@ -44,7 +44,7 @@ PRICES = {
 }
 
 # States
-AMOUNT, SCREENSHOT, EMAIL = range(3)
+AMOUNT, SCREENSHOT, EMAIL, SUPPORT_MSG = range(4)
 
 # ==================== DATABASE SETUP ====================
 def init_db():
@@ -85,6 +85,13 @@ def init_db():
                       amount INTEGER,
                       final_amount INTEGER,
                       utr TEXT,
+                      timestamp TEXT)''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS support_tickets
+                     (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                      user_id INTEGER,
+                      message TEXT,
+                      status TEXT,
                       timestamp TEXT)''')
         
         conn.commit()
@@ -462,22 +469,23 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # ========== SUPPORT SECTION ==========
         elif data == "support":
-            keyboard = [[InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")]]
+            support_text = (
+                f"*🆘 HELP & SUPPORT*\n\n"
+                f"📝 *Please type your issue below:*\n\n"
+                f"*Our support team will contact you soon.*\n\n"
+                f"*(Type your message or click BACK)*"
+            )
+            
+            keyboard = [[InlineKeyboardButton("🔙 BACK TO MAIN", callback_data="main_menu")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
             await query.edit_message_text(
-                f"*🆘 HELP & SUPPORT*\n\n"
-                f"📌 *Frequently Asked Questions:*\n\n"
-                f"❓ *How to buy?*\n"
-                f"→ Add money → Select card → Enter email\n\n"
-                f"❓ *Delivery time?*\n"
-                f"→ Instant after purchase\n\n"
-                f"❓ *Payment issues?*\n"
-                f"→ Send screenshot with UTR to admin\n\n"
-                f"⏳ *Support team will contact you within 24h*",
+                support_text,
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=reply_markup
             )
+            
+            return SUPPORT_MSG
         
         # ========== PROOFS SECTION ==========
         elif data == "proofs":
@@ -521,6 +529,28 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=reply_markup
             )
+        
+        # ========== CANCEL BUTTON ==========
+        elif data == "cancel_topup":
+            await query.edit_message_text(
+                f"*❌ CANCELLED*\n\n"
+                f"*Top-up process cancelled.*",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            # Show topup menu again
+            keyboard = [
+                [InlineKeyboardButton("📱 UPI PAYMENT", callback_data="upi")],
+                [InlineKeyboardButton("🔙 BACK", callback_data="main_menu")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await query.message.reply_text(
+                f"*💰 ADD MONEY TO WALLET*\n\n"
+                f"*Select payment method:*",
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=reply_markup
+            )
+            return ConversationHandler.END
     
     except Exception as e:
         logger.error(f"❌ Callback error: {e}")
@@ -558,10 +588,10 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'fee': fee
         }
         
-        # Create verify button
+        # Create verify and cancel buttons
         keyboard = [
             [InlineKeyboardButton("✅ I HAVE PAID", callback_data="paid")],
-            [InlineKeyboardButton("❌ CANCEL", callback_data="topup")]
+            [InlineKeyboardButton("❌ CANCEL", callback_data="cancel_topup")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -836,21 +866,6 @@ async def handle_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             pass
         
-        # Random proof (50% chance)
-        if random.random() < 0.5:
-            try:
-                await context.bot.send_message(
-                    chat_id=PROOF_CHANNEL,
-                    text=(
-                        f"⚡ *NEW PURCHASE*\n\n"
-                        f"*[User] bought* {purchase['card_name']} *₹{purchase['value']}*\n"
-                        f"*at {datetime.now().strftime('%I:%M %p')}*"
-                    ),
-                    parse_mode=ParseMode.MARKDOWN
-                )
-            except:
-                pass
-        
         # Clear context
         context.user_data.clear()
         return ConversationHandler.END
@@ -860,98 +875,79 @@ async def handle_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ An error occurred. Please try again.")
         return ConversationHandler.END
 
-# ==================== BROADCAST COMMAND ====================
-async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ==================== SUPPORT MESSAGE HANDLER ====================
+async def handle_support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         user = update.effective_user
+        message = update.message.text.strip()
         
-        # Admin only
-        if user.id != ADMIN_ID:
-            await update.message.reply_text(
-                f"*❌ UNAUTHORIZED*\n\n"
-                f"*This command is for admins only.*",
+        # Save support ticket
+        try:
+            conn = sqlite3.connect('bot_database.db')
+            c = conn.cursor()
+            c.execute('''INSERT INTO support_tickets
+                         (user_id, message, status, timestamp)
+                         VALUES (?, ?, ?, ?)''',
+                      (user.id, message, "pending", datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+            conn.commit()
+            conn.close()
+        except:
+            pass
+        
+        # Notify admin
+        try:
+            admin_msg = (
+                f"🆘 *NEW SUPPORT TICKET*\n\n"
+                f"👤 *User:* {user.first_name}\n"
+                f"🆔 *ID:* `{user.id}`\n"
+                f"📝 *Message:* {message}\n"
+                f"⏰ *Time:* {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+            await context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=admin_msg,
                 parse_mode=ParseMode.MARKDOWN
             )
-            return
+        except:
+            pass
         
-        # Check if message provided
-        if not context.args:
-            await update.message.reply_text(
-                f"*📢 BROADCAST COMMAND*\n\n"
-                f"*Usage:* `/broadcast Your message here`\n\n"
-                f"*Example:* `/broadcast 🎉 New offer: 10% off on all cards!`",
-                parse_mode=ParseMode.MARKDOWN
-            )
-            return
+        # Add BACK button
+        keyboard = [[InlineKeyboardButton("🔙 BACK TO MAIN MENU", callback_data="main_menu")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
         
-        message = " ".join(context.args)
-        
-        # Get all users
-        conn = sqlite3.connect('bot_database.db')
-        c = conn.cursor()
-        c.execute("SELECT user_id FROM users")
-        users = c.fetchall()
-        conn.close()
-        
-        sent = 0
-        failed = 0
-        
-        status_msg = await update.message.reply_text(
-            f"*📢 BROADCAST STARTED*\n\n"
-            f"*Sending to {len(users)} users...*",
-            parse_mode=ParseMode.MARKDOWN
+        # Confirm to user
+        await update.message.reply_text(
+            f"*✅ SUPPORT MESSAGE SENT!*\n\n"
+            f"*Your issue has been recorded.*\n"
+            f"*Our support team will contact you soon.*\n\n"
+            f"⏳ *Response time: 24 hours*",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=reply_markup
         )
         
-        for user_id in users:
-            try:
-                await context.bot.send_message(
-                    chat_id=user_id[0],
-                    text=(
-                        f"*📢 ADMIN BROADCAST*\n\n"
-                        f"{message}\n\n"
-                        f"*━ GIFT CARD BOT ━*"
-                    ),
-                    parse_mode=ParseMode.MARKDOWN
-                )
-                sent += 1
-                await asyncio.sleep(0.05)
-            except:
-                failed += 1
-            
-            # Update status every 10 users
-            if (sent + failed) % 10 == 0:
-                await status_msg.edit_text(
-                    f"*📢 BROADCASTING...*\n\n"
-                    f"*Sent:* {sent}\n"
-                    f"*Failed:* {failed}\n"
-                    f"*Total:* {len(users)}",
-                    parse_mode=ParseMode.MARKDOWN
-                )
+        return ConversationHandler.END
         
-        await status_msg.edit_text(
-            f"*📢 BROADCAST COMPLETED*\n\n"
-            f"*✅ Sent:* {sent}\n"
-            f"*❌ Failed:* {failed}\n"
-            f"*Total:* {len(users)}",
-            parse_mode=ParseMode.MARKDOWN
-        )
     except Exception as e:
-        logger.error(f"❌ Broadcast error: {e}")
-        await update.message.reply_text("⚠️ Broadcast failed.")
+        logger.error(f"❌ Support message error: {e}")
+        await update.message.reply_text("⚠️ An error occurred. Please try again.")
+        return ConversationHandler.END
 
 # ==================== AUTO PROOFS ====================
 async def auto_proofs(context: ContextTypes.DEFAULT_TYPE):
     """Send random purchase proofs to proof channel every 30-60 seconds"""
     try:
+        # Random names (no usernames)
+        names = ["Rahul", "Priya", "Amit", "Neha", "Vikram", "Pooja", "Raj", "Simran", "Arjun", "Kavya"]
         cards = ["🟦 Amazon", "🟩 Play Store", "🎟️ BookMyShow", "🛍️ Myntra", "📦 Flipkart", "🍕 Zomato", "🛒 Big Basket"]
         amounts = [500, 1000, 2000]
         
+        name = random.choice(names)
         card = random.choice(cards)
         amount = random.choice(amounts)
         
         message = (
             f"⚡ *NEW PURCHASE*\n\n"
-            f"*[User] bought* {card} *₹{amount}*\n"
+            f"*{name} bought* {card} *₹{amount}*\n"
             f"*at {datetime.now().strftime('%I:%M %p')}*"
         )
         
@@ -960,6 +956,9 @@ async def auto_proofs(context: ContextTypes.DEFAULT_TYPE):
             text=message,
             parse_mode=ParseMode.MARKDOWN
         )
+        
+        logger.info(f"✅ Auto proof sent: {name} - {card} ₹{amount}")
+        
     except Exception as e:
         logger.error(f"❌ Auto proof error: {e}")
 
@@ -1047,6 +1046,85 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"❌ Admin callback error: {e}")
 
+# ==================== BROADCAST COMMAND ====================
+async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        user = update.effective_user
+        
+        # Admin only
+        if user.id != ADMIN_ID:
+            await update.message.reply_text(
+                f"*❌ UNAUTHORIZED*\n\n"
+                f"*This command is for admins only.*",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            return
+        
+        # Check if message provided
+        if not context.args:
+            await update.message.reply_text(
+                f"*📢 BROADCAST COMMAND*\n\n"
+                f"*Usage:* `/broadcast Your message here`\n\n"
+                f"*Example:* `/broadcast 🎉 New offer: 10% off on all cards!`",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            return
+        
+        message = " ".join(context.args)
+        
+        # Get all users
+        conn = sqlite3.connect('bot_database.db')
+        c = conn.cursor()
+        c.execute("SELECT user_id FROM users")
+        users = c.fetchall()
+        conn.close()
+        
+        sent = 0
+        failed = 0
+        
+        status_msg = await update.message.reply_text(
+            f"*📢 BROADCAST STARTED*\n\n"
+            f"*Sending to {len(users)} users...*",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        
+        for user_id in users:
+            try:
+                await context.bot.send_message(
+                    chat_id=user_id[0],
+                    text=(
+                        f"*📢 ADMIN BROADCAST*\n\n"
+                        f"{message}\n\n"
+                        f"*━ GIFT CARD BOT ━*"
+                    ),
+                    parse_mode=ParseMode.MARKDOWN
+                )
+                sent += 1
+                await asyncio.sleep(0.05)
+            except:
+                failed += 1
+            
+            # Update status every 10 users
+            if (sent + failed) % 10 == 0:
+                await status_msg.edit_text(
+                    f"*📢 BROADCASTING...*\n\n"
+                    f"*Sent:* {sent}\n"
+                    f"*Failed:* {failed}\n"
+                    f"*Total:* {len(users)}",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+        
+        await status_msg.edit_text(
+            f"*📢 BROADCAST COMPLETED*\n\n"
+            f"*✅ Sent:* {sent}\n"
+            f"*❌ Failed:* {failed}\n"
+            f"*Total:* {len(users)}",
+            parse_mode=ParseMode.MARKDOWN
+        )
+    except Exception as e:
+        logger.error(f"❌ Broadcast error: {e}")
+        await update.message.reply_text("⚠️ Broadcast failed.")
+
 # ==================== CANCEL ====================
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Add BACK button
@@ -1102,18 +1180,29 @@ def main():
             fallbacks=[CommandHandler("cancel", cancel)]
         )
         
+        # Conversation handler for support messages
+        support_conv = ConversationHandler(
+            entry_points=[CallbackQueryHandler(button_callback, pattern="^support$")],
+            states={
+                SUPPORT_MSG: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_support_message)]
+            },
+            fallbacks=[CommandHandler("cancel", cancel)]
+        )
+        
         # Add handlers
         app.add_handler(CommandHandler("start", start))
         app.add_handler(CommandHandler("broadcast", broadcast))
         app.add_handler(amount_conv)
         app.add_handler(payment_conv)
         app.add_handler(email_conv)
+        app.add_handler(support_conv)
         app.add_handler(CallbackQueryHandler(admin_callback, pattern="^(approve_|reject_)"))
         app.add_handler(CallbackQueryHandler(button_callback))
         app.add_error_handler(error_handler)
         
         # Auto proofs job (every 30-60 seconds)
         if app.job_queue:
+            # Send first proof after 10 seconds, then every 30-60 seconds
             app.job_queue.run_repeating(auto_proofs, interval=random.randint(30, 60), first=10)
         
         logger.info("✅ Bot started successfully!")
