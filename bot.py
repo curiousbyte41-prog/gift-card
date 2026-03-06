@@ -10,7 +10,7 @@ from telegram.constants import ParseMode
 
 # ==================== SETUP LOGGING ====================
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format='%(asime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
@@ -162,23 +162,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         is_member = await check_membership(user.id, context)
         
         if not is_member:
-            # Beautiful welcome message for non-members
             welcome_text = (
                 f"✨ *WELCOME TO GIFT CARD BOT* ✨\n\n"
                 f"👋 *Hello {user.first_name}!*\n\n"
-                f"🎁 *Get Gift Cards at 80% OFF!*\n"
-                f"• Amazon • Flipkart • Play Store\n"
-                f"• Myntra • Zomato • & More!\n\n"
+                f"🎁 *Get Gift Cards at 80% OFF!*\n\n"
                 f"🔒 *VERIFICATION REQUIRED*\n"
-                f"To prevent fraud and ensure safe transactions,\n"
-                f"you must join our official channel first.\n\n"
+                f"You must join our official channel first.\n\n"
                 f"👇 *Click the button below to join*"
             )
             
-            # Create channel button
             keyboard = [[
-                InlineKeyboardButton("📢 JOIN OFFICIAL CHANNEL", url=f"https://t.me/gift_card_main"),
-                InlineKeyboardButton("✅ I HAVE JOINED", callback_data="verify")
+                InlineKeyboardButton("📢 JOIN CHANNEL", url=f"https://t.me/gift_card_main"),
+                InlineKeyboardButton("✅ VERIFY", callback_data="verify")
             ]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
@@ -189,1084 +184,494 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
         
-        # If already member, show main menu
+        # Show main menu
         balance = get_user_balance(user.id)
         
-        welcome_back = (
-            f"🎉 *WELCOME BACK!* 🎉\n\n"
-            f"👤 *User:* {user.first_name}\n"
-            f"💰 *Balance:* ₹{balance}\n\n"
-            f"⬇️ *Please select an option below:*"
-        )
-        
-        # Create main menu
         keyboard = [
             [InlineKeyboardButton("🎁 GIFT CARDS", callback_data="giftcard")],
             [InlineKeyboardButton("💰 ADD MONEY", callback_data="topup")],
             [InlineKeyboardButton("💳 MY BALANCE", callback_data="balance")],
-            [InlineKeyboardButton("🆘 HELP & SUPPORT", callback_data="support")],
-            [InlineKeyboardButton("📊 LIVE PROOFS", callback_data="proofs")]
+            [InlineKeyboardButton("🆘 SUPPORT", callback_data="support")],
+            [InlineKeyboardButton("📊 PROOFS", callback_data="proofs")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await update.message.reply_text(
-            welcome_back,
+            f"*🏠 MAIN MENU*\n\n"
+            f"👋 *Welcome Back, {user.first_name}!*\n"
+            f"💰 *Balance:* ₹{balance}",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=reply_markup
         )
     except Exception as e:
         logger.error(f"❌ Start error: {e}")
-        await update.message.reply_text("⚠️ Something went wrong. Please try again later.")
+        await update.message.reply_text("⚠️ Error. Please try /start again")
 
-# ==================== VERIFY CALLBACK ====================
-async def verify_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ==================== BUTTON CALLBACK HANDLER ====================
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Main handler for all button clicks"""
     query = update.callback_query
     await query.answer()
     
     user = query.from_user
-    is_member = await check_membership(user.id, context)
+    data = query.data
     
-    if is_member:
-        balance = get_user_balance(user.id)
-        
-        success_text = (
-            f"✅ *VERIFICATION SUCCESSFUL!*\n\n"
-            f"👋 *Welcome {user.first_name}!*\n"
-            f"💰 *Your Balance:* ₹{balance}\n\n"
-            f"*You now have full access to:*\n"
-            f"🎁 7+ Gift Card Brands\n"
-            f"💰 Instant Top-up via UPI\n"
-            f"⚡ 24/7 Automatic Delivery\n\n"
-            f"⬇️ *Choose an option:*"
-        )
-        
-        keyboard = [
-            [InlineKeyboardButton("🎁 GIFT CARDS", callback_data="giftcard")],
-            [InlineKeyboardButton("💰 ADD MONEY", callback_data="topup")],
-            [InlineKeyboardButton("💳 MY BALANCE", callback_data="balance")],
-            [InlineKeyboardButton("🆘 HELP & SUPPORT", callback_data="support")],
-            [InlineKeyboardButton("📊 LIVE PROOFS", callback_data="proofs")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await query.edit_message_text(
-            success_text,
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=reply_markup
-        )
-    else:
-        fail_text = (
-            f"❌ *VERIFICATION FAILED*\n\n"
-            f"*You haven't joined our channel yet!*\n\n"
-            f"1️⃣ Click the button below\n"
-            f"2️⃣ Join @gift_card_main\n"
-            f"3️⃣ Click Verify again"
-        )
-        
-        keyboard = [[
-            InlineKeyboardButton("📢 JOIN CHANNEL", url=f"https://t.me/gift_card_main"),
-            InlineKeyboardButton("🔄 VERIFY AGAIN", callback_data="verify")
-        ]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await query.edit_message_text(
-            fail_text,
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=reply_markup
-        )
-
-# ==================== BUTTON CALLBACK ====================
-async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        query = update.callback_query
-        await query.answer()
-        
-        user = query.from_user
-        data = query.data
-        
-        print(f"🔘 Button clicked: {data} by {user.first_name}")  # Debug log
-        
-        # Handle verify button separately
-        if data == "verify":
-            await verify_callback(update, context)
-            return
-        
-        # Check membership for all other actions
+    print(f"🔘 Button clicked: {data} by {user.first_name}")  # Debug
+    
+    # ===== VERIFY BUTTON =====
+    if data == "verify":
         is_member = await check_membership(user.id, context)
-        if not is_member:
-            keyboard = [[
-                InlineKeyboardButton("📢 JOIN CHANNEL", url=f"https://t.me/gift_card_main"),
-                InlineKeyboardButton("✅ VERIFY", callback_data="verify")
-            ]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            await query.edit_message_text(
-                f"⚠️ *ACCESS DENIED*\n\n"
-                f"*You must be a member of our channel to use the bot.*\n\n"
-                f"👇 *Join and click Verify*",
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=reply_markup
-            )
-            return
         
-        # ========== GIFT CARD SECTION ==========
-        if data == "giftcard":
-            keyboard = []
-            for card_id, card in GIFT_CARDS.items():
-                keyboard.append([InlineKeyboardButton(f"{card['emoji']} {card['name']}", callback_data=f"card_{card_id}")])
-            keyboard.append([InlineKeyboardButton("🔙 BACK TO MAIN", callback_data="main_menu")])
-            
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            await query.edit_message_text(
-                f"*🎁 GIFT CARDS*\n\n"
-                f"*Select your preferred brand:*\n\n"
-                f"💳 *All cards delivered INSTANTLY on email*\n"
-                f"⚡ *24/7 Automatic Delivery*\n"
-                f"✅ *100% Working Codes*",
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=reply_markup
-            )
-        
-        # Card selection
-        elif data.startswith("card_"):
-            card_id = data.replace("card_", "")
-            card = GIFT_CARDS[card_id]
-            
-            keyboard = [
-                [InlineKeyboardButton(f"₹500 FOR JUST ₹{PRICES[500]}", callback_data=f"buy_{card_id}_500")],
-                [InlineKeyboardButton(f"₹1000 FOR JUST ₹{PRICES[1000]}", callback_data=f"buy_{card_id}_1000")],
-                [InlineKeyboardButton(f"₹2000 FOR JUST ₹{PRICES[2000]}", callback_data=f"buy_{card_id}_2000")],
-                [InlineKeyboardButton("🔙 BACK", callback_data="giftcard")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            await query.edit_message_text(
-                f"*{card['emoji']} {card['name']} GIFT CARD*\n\n"
-                f"📱 *Delivery:* On Email\n"
-                f"⚡ *Time:* Instant after purchase\n"
-                f"✅ *Status:* IN SALE\n\n"
-                f"*Select denomination:*",
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=reply_markup
-            )
-        
-        # Buy card
-        elif data.startswith("buy_"):
-            parts = data.split("_")
-            card_id = parts[1]
-            value = int(parts[2])
-            price = PRICES[value]
-            card = GIFT_CARDS[card_id]
-            
+        if is_member:
             balance = get_user_balance(user.id)
-            
-            if balance < price:
-                keyboard = [
-                    [InlineKeyboardButton("💰 ADD MONEY NOW", callback_data="topup")],
-                    [InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")]
-                ]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                
-                await query.edit_message_text(
-                    f"*❌ INSUFFICIENT BALANCE!*\n\n"
-                    f"*Your Balance:* ₹{balance}\n"
-                    f"*Required:* ₹{price}\n"
-                    f"*Short by:* ₹{price - balance}\n\n"
-                    f"*Please add money to your wallet.*",
-                    parse_mode=ParseMode.MARKDOWN,
-                    reply_markup=reply_markup
-                )
-                return
-            
-            # Store purchase info
-            context.user_data['purchase'] = {
-                'card_name': card['name'],
-                'value': value,
-                'price': price
-            }
-            
-            await query.edit_message_text(
-                f"*✅ BALANCE SUFFICIENT*\n\n"
-                f"*{card['emoji']} {card['name']} ₹{value}*\n"
-                f"*Price:* ₹{price}\n"
-                f"*Your Balance:* ₹{balance}\n"
-                f"*New Balance:* ₹{balance - price}\n\n"
-                f"*📧 Please enter your EMAIL ID to receive the card:*\n"
-                f"*(Example: example@gmail.com)*",
-                parse_mode=ParseMode.MARKDOWN
-            )
-            
-            return EMAIL
-        
-        # ========== TOP UP SECTION ==========
-        elif data == "topup":
-            keyboard = [
-                [InlineKeyboardButton("📱 UPI PAYMENT", callback_data="upi")],
-                [InlineKeyboardButton("🔙 BACK", callback_data="main_menu")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            await query.edit_message_text(
-                f"*💰 ADD MONEY TO WALLET*\n\n"
-                f"*Select payment method:*\n\n"
-                f"📱 *UPI* - Instant & Easy",
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=reply_markup
-            )
-        
-        elif data == "upi":
-            await query.edit_message_text(
-                f"*💳 UPI RECHARGE*\n\n"
-                f"*Please enter the amount you want to add:*\n\n"
-                f"💰 *Minimum:* ₹10\n"
-                f"💰 *Maximum:* ₹10,000\n\n"
-                f"📌 *NOTE:* 20% fee for payments below ₹120\n"
-                f"       *(Example: ₹100 → ₹80 balance)*\n\n"
-                f"*Enter amount (in numbers):*",
-                parse_mode=ParseMode.MARKDOWN
-            )
-            
-            return AMOUNT
-        
-        # ========== BALANCE SECTION ==========
-        elif data == "balance":
-            balance = get_user_balance(user.id)
-            
-            # Get recent transactions
-            conn = sqlite3.connect('bot_database.db')
-            c = conn.cursor()
-            c.execute('''SELECT amount, type, timestamp FROM transactions 
-                         WHERE user_id = ? ORDER BY timestamp DESC LIMIT 5''', (user.id,))
-            transactions = c.fetchall()
-            conn.close()
-            
-            trans_text = ""
-            for t in transactions:
-                amount, type_, time = t
-                if type_ == "credit":
-                    trans_text += f"• *+₹{amount}* on {time[:10]}\n"
-                else:
-                    trans_text += f"• *-₹{amount}* on {time[:10]}\n"
-            
-            if not trans_text:
-                trans_text = "• No transactions yet"
-            
-            keyboard = [
-                [InlineKeyboardButton("💰 ADD MONEY", callback_data="topup")],
-                [InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            await query.edit_message_text(
-                f"*💳 YOUR WALLET*\n\n"
-                f"━━━━━━━━━━━━━━━━━━\n"
-                f"💰 *Available Balance:* ₹{balance}\n"
-                f"━━━━━━━━━━━━━━━━━━\n\n"
-                f"*📊 Recent Activity:*\n"
-                f"{trans_text}",
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=reply_markup
-            )
-        
-        # ========== SUPPORT SECTION ==========
-        elif data == "support":
-            support_text = (
-                f"*🆘 HELP & SUPPORT*\n\n"
-                f"📝 *Please type your issue below:*\n\n"
-                f"*Our support team will contact you soon.*\n\n"
-                f"*(Type your message or click BACK)*"
-            )
-            
-            keyboard = [[InlineKeyboardButton("🔙 BACK TO MAIN", callback_data="main_menu")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            await query.edit_message_text(
-                support_text,
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=reply_markup
-            )
-            
-            return SUPPORT_MSG
-        
-        # ========== PROOFS SECTION ==========
-        elif data == "proofs":
-            keyboard = [
-                [InlineKeyboardButton("📢 VIEW LIVE PROOFS", url=f"https://t.me/gift_card_log")],
-                [InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            await query.edit_message_text(
-                f"*📊 LIVE PURCHASE PROOFS*\n\n"
-                f"✅ *See real transactions from real users:*\n\n"
-                f"👉 {PROOF_CHANNEL}\n\n"
-                f"━━━━━━━━━━━━━━━━━━\n"
-                f"⚡ *Latest Activity:*\n"
-                f"*[User] bought Amazon ₹1000* at {datetime.now().strftime('%I:%M %p')}\n"
-                f"━━━━━━━━━━━━━━━━━━\n\n"
-                f"*Click the button below to join*",
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=reply_markup
-            )
-        
-        # ========== MAIN MENU ==========
-        elif data == "main_menu":
-            balance = get_user_balance(user.id)
-            
             keyboard = [
                 [InlineKeyboardButton("🎁 GIFT CARDS", callback_data="giftcard")],
                 [InlineKeyboardButton("💰 ADD MONEY", callback_data="topup")],
                 [InlineKeyboardButton("💳 MY BALANCE", callback_data="balance")],
-                [InlineKeyboardButton("🆘 HELP & SUPPORT", callback_data="support")],
-                [InlineKeyboardButton("📊 LIVE PROOFS", callback_data="proofs")]
+                [InlineKeyboardButton("🆘 SUPPORT", callback_data="support")],
+                [InlineKeyboardButton("📊 PROOFS", callback_data="proofs")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
             await query.edit_message_text(
-                f"*🏠 MAIN MENU*\n\n"
-                f"*Welcome Back, {user.first_name}!* 👋\n"
-                f"*Your Balance:* ₹{balance}\n\n"
-                f"*Please select an option:*",
+                f"✅ *VERIFIED!*\n\n"
+                f"👋 *Welcome {user.first_name}!*\n"
+                f"💰 *Balance:* ₹{balance}",
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=reply_markup
             )
-        
-        # ========== PAID BUTTON ==========
-        elif data == "paid":
-            await paid_callback(update, context)
-            return
-        
-        # ========== CANCEL BUTTON ==========
-        elif data == "cancel_topup":
-            await query.edit_message_text(
-                f"*❌ CANCELLED*\n\n"
-                f"*Top-up process cancelled.*",
-                parse_mode=ParseMode.MARKDOWN
-            )
-            # Show topup menu again
-            keyboard = [
-                [InlineKeyboardButton("📱 UPI PAYMENT", callback_data="upi")],
-                [InlineKeyboardButton("🔙 BACK", callback_data="main_menu")]
-            ]
+        else:
+            keyboard = [[
+                InlineKeyboardButton("📢 JOIN CHANNEL", url=f"https://t.me/gift_card_main"),
+                InlineKeyboardButton("🔄 VERIFY AGAIN", callback_data="verify")
+            ]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            await query.message.reply_text(
-                f"*💰 ADD MONEY TO WALLET*\n\n"
-                f"*Select payment method:*",
+            await query.edit_message_text(
+                f"❌ *Not a member!*\n\nJoin @gift_card_main first",
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=reply_markup
             )
-            return ConversationHandler.END
+        return
     
-    except Exception as e:
-        logger.error(f"❌ Callback error: {e}")
-        await query.edit_message_text("⚠️ An error occurred. Please try again.")
-
-# ==================== PAID CALLBACK ====================
-async def paid_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        query = update.callback_query
-        await query.answer()
-        
-        print("💰 Paid button clicked")  # Debug log
-        
-        # Add BACK button to main menu
-        keyboard = [[InlineKeyboardButton("🔙 BACK TO MAIN MENU", callback_data="main_menu")]]
+    # Check membership for all other actions
+    is_member = await check_membership(user.id, context)
+    if not is_member:
+        keyboard = [[
+            InlineKeyboardButton("📢 JOIN CHANNEL", url=f"https://t.me/gift_card_main"),
+            InlineKeyboardButton("✅ VERIFY", callback_data="verify")
+        ]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await query.edit_message_text(
-            f"*📤 SEND PAYMENT PROOF*\n\n"
-            f"*Please send:*\n"
-            f"1️⃣ *Your payment SCREENSHOT* (as photo)\n"
-            f"2️⃣ *Your UTR NUMBER* (in text)\n\n"
-            f"*Example UTR:* `SBIN1234567890`\n\n"
-            f"*Send both in this chat.*",
+            f"⚠️ *Access Denied*\n\nJoin @gift_card_main first",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=reply_markup
         )
+        return
+    
+    # ===== GIFT CARD MENU =====
+    if data == "giftcard":
+        keyboard = []
+        for card_id, card in GIFT_CARDS.items():
+            keyboard.append([InlineKeyboardButton(f"{card['emoji']} {card['name']}", callback_data=f"card_{card_id}")])
+        keyboard.append([InlineKeyboardButton("🔙 BACK", callback_data="main_menu")])
         
+        await query.edit_message_text(
+            "*🎁 GIFT CARDS*\n\nSelect a brand:*",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    
+    # ===== CARD SELECTED =====
+    elif data.startswith("card_"):
+        card_id = data.replace("card_", "")
+        card = GIFT_CARDS[card_id]
+        
+        keyboard = [
+            [InlineKeyboardButton(f"₹500 → ₹{PRICES[500]}", callback_data=f"buy_{card_id}_500")],
+            [InlineKeyboardButton(f"₹1000 → ₹{PRICES[1000]}", callback_data=f"buy_{card_id}_1000")],
+            [InlineKeyboardButton(f"₹2000 → ₹{PRICES[2000]}", callback_data=f"buy_{card_id}_2000")],
+            [InlineKeyboardButton("🔙 BACK", callback_data="giftcard")]
+        ]
+        
+        await query.edit_message_text(
+            f"*{card['emoji']} {card['name']}*\n\nSelect amount:*",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    
+    # ===== BUY CARD =====
+    elif data.startswith("buy_"):
+        parts = data.split("_")
+        card_id = parts[1]
+        value = int(parts[2])
+        price = PRICES[value]
+        card = GIFT_CARDS[card_id]
+        
+        balance = get_user_balance(user.id)
+        
+        if balance < price:
+            keyboard = [[InlineKeyboardButton("💰 ADD MONEY", callback_data="topup")]]
+            await query.edit_message_text(
+                f"❌ *Insufficient balance*\nNeed: ₹{price}\nYou have: ₹{balance}",
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+            return
+        
+        context.user_data['purchase'] = {
+            'card': card['name'],
+            'value': value,
+            'price': price
+        }
+        
+        await query.edit_message_text(
+            f"*📧 Enter your email:*",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return EMAIL
+    
+    # ===== TOP UP MENU =====
+    elif data == "topup":
+        keyboard = [
+            [InlineKeyboardButton("📱 UPI", callback_data="upi")],
+            [InlineKeyboardButton("🔙 BACK", callback_data="main_menu")]
+        ]
+        await query.edit_message_text(
+            "*💰 ADD MONEY*\n\nSelect method:*",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    
+    # ===== UPI SELECTED =====
+    elif data == "upi":
+        await query.edit_message_text(
+            f"*💰 Enter amount (₹10-10000):*\n\nNote: 20% fee below ₹120",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return AMOUNT
+    
+    # ===== PAID BUTTON =====
+    elif data == "paid":
+        keyboard = [[InlineKeyboardButton("🔙 BACK", callback_data="main_menu")]]
+        await query.edit_message_text(
+            f"*📤 SEND PAYMENT PROOF*\n\n"
+            f"1️⃣ Send SCREENSHOT\n"
+            f"2️⃣ Send UTR number",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
         return SCREENSHOT
-    except Exception as e:
-        logger.error(f"❌ Paid callback error: {e}")
+    
+    # ===== CANCEL TOPUP =====
+    elif data == "cancel_topup":
+        keyboard = [
+            [InlineKeyboardButton("📱 UPI", callback_data="upi")],
+            [InlineKeyboardButton("🔙 BACK", callback_data="main_menu")]
+        ]
+        await query.edit_message_text(
+            f"❌ *Cancelled*\n\nSelect method:",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
         return ConversationHandler.END
+    
+    # ===== BALANCE =====
+    elif data == "balance":
+        balance = get_user_balance(user.id)
+        keyboard = [[InlineKeyboardButton("🔙 BACK", callback_data="main_menu")]]
+        await query.edit_message_text(
+            f"*💳 YOUR BALANCE*\n\n💰 ₹{balance}",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    
+    # ===== SUPPORT =====
+    elif data == "support":
+        keyboard = [[InlineKeyboardButton("🔙 BACK", callback_data="main_menu")]]
+        await query.edit_message_text(
+            "*🆘 SUPPORT*\n\nType your issue below:",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        return SUPPORT_MSG
+    
+    # ===== PROOFS =====
+    elif data == "proofs":
+        keyboard = [
+            [InlineKeyboardButton("📢 VIEW CHANNEL", url=f"https://t.me/gift_card_log")],
+            [InlineKeyboardButton("🔙 BACK", callback_data="main_menu")]
+        ]
+        await query.edit_message_text(
+            f"*📊 PROOFS*\n\nJoin @gift_card_log",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    
+    # ===== MAIN MENU =====
+    elif data == "main_menu":
+        balance = get_user_balance(user.id)
+        keyboard = [
+            [InlineKeyboardButton("🎁 GIFT CARDS", callback_data="giftcard")],
+            [InlineKeyboardButton("💰 ADD MONEY", callback_data="topup")],
+            [InlineKeyboardButton("💳 MY BALANCE", callback_data="balance")],
+            [InlineKeyboardButton("🆘 SUPPORT", callback_data="support")],
+            [InlineKeyboardButton("📊 PROOFS", callback_data="proofs")]
+        ]
+        await query.edit_message_text(
+            f"*🏠 MAIN MENU*\n\n👋 {user.first_name}\n💰 ₹{balance}",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
 
 # ==================== AMOUNT HANDLER ====================
 async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        text = update.message.text.strip()
+        amount = int(update.message.text.strip())
         
-        amount = int(text)
         if amount < 10 or amount > 10000:
-            await update.message.reply_text(
-                f"*❌ INVALID AMOUNT*\n\n"
-                f"*Amount must be between ₹10 and ₹10,000*\n\n"
-                f"*Please try again:*",
-                parse_mode=ParseMode.MARKDOWN
-            )
+            await update.message.reply_text("❌ Amount must be ₹10-10000")
             return AMOUNT
         
-        # Calculate fee
         if amount < 120:
-            fee = int(amount * 0.2)
-            final_amount = amount - fee
-            fee_text = f"*Fee (20%):* ₹{fee}"
+            final = amount - int(amount * 0.2)
+            fee_text = f"Fee: ₹{int(amount*0.2)}"
         else:
-            fee = 0
-            final_amount = amount
-            fee_text = "*Fee:* No fee (above ₹120)"
+            final = amount
+            fee_text = "No fee"
         
-        # Store in context
-        context.user_data['topup'] = {
-            'amount': amount,
-            'final_amount': final_amount,
-            'fee': fee
-        }
+        context.user_data['topup'] = {'amount': amount, 'final': final}
         
-        # Create verify and cancel buttons
         keyboard = [
-            [InlineKeyboardButton("✅ I HAVE PAID", callback_data="paid")],
+            [InlineKeyboardButton("✅ PAID", callback_data="paid")],
             [InlineKeyboardButton("❌ CANCEL", callback_data="cancel_topup")]
         ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
         
-        # Try to send QR code if file exists
-        try:
-            if os.path.exists(QR_CODE_PATH):
-                with open(QR_CODE_PATH, 'rb') as qr_file:
-                    await update.message.reply_photo(
-                        photo=qr_file,
-                        caption=(
-                            f"*💳 PAYMENT DETAILS*\n\n"
-                            f"*Amount to Pay:* ₹{amount}\n"
-                            f"{fee_text}\n"
-                            f"*You will receive:* ₹{final_amount}\n\n"
-                            f"*UPI ID:* `{UPI_ID}`\n\n"
-                            f"*📱 HOW TO PAY:*\n"
-                            f"1️⃣ Scan QR code or pay to UPI ID\n"
-                            f"2️⃣ Take a SCREENSHOT of payment\n"
-                            f"3️⃣ Copy the UTR number\n"
-                            f"4️⃣ Click 'I HAVE PAID' below\n\n"
-                            f"⏳ *Auto-cancel in 10 minutes*"
-                        ),
-                        parse_mode=ParseMode.MARKDOWN,
-                        reply_markup=reply_markup
-                    )
-            else:
-                # If QR code not found, send without QR
-                await update.message.reply_text(
-                    f"*💳 PAYMENT DETAILS*\n\n"
-                    f"*Amount to Pay:* ₹{amount}\n"
-                    f"{fee_text}\n"
-                    f"*You will receive:* ₹{final_amount}\n\n"
-                    f"*UPI ID:* `{UPI_ID}`\n\n"
-                    f"*📱 HOW TO PAY:*\n"
-                    f"1️⃣ Open any UPI app (Google Pay, PhonePe, etc.)\n"
-                    f"2️⃣ Pay to the UPI ID above\n"
-                    f"3️⃣ Take a SCREENSHOT of payment\n"
-                    f"4️⃣ Copy the UTR number\n"
-                    f"5️⃣ Click 'I HAVE PAID' below\n\n"
-                    f"⏳ *Auto-cancel in 10 minutes*",
+        # Try to send QR code
+        if os.path.exists(QR_CODE_PATH):
+            with open(QR_CODE_PATH, 'rb') as qr:
+                await update.message.reply_photo(
+                    photo=qr,
+                    caption=(
+                        f"*💳 PAY TO:* `{UPI_ID}`\n"
+                        f"Amount: ₹{amount}\n"
+                        f"{fee_text}\n"
+                        f"You get: ₹{final}\n\n"
+                        f"After payment, click PAID"
+                    ),
                     parse_mode=ParseMode.MARKDOWN,
-                    reply_markup=reply_markup
+                    reply_markup=InlineKeyboardMarkup(keyboard)
                 )
-        except Exception as e:
-            logger.error(f"❌ QR code error: {e}")
-            # Fallback to text only
+        else:
             await update.message.reply_text(
-                f"*💳 PAYMENT DETAILS*\n\n"
-                f"*Amount to Pay:* ₹{amount}\n"
+                f"*💳 PAY TO:* `{UPI_ID}`\n"
+                f"Amount: ₹{amount}\n"
                 f"{fee_text}\n"
-                f"*You will receive:* ₹{final_amount}\n\n"
-                f"*UPI ID:* `{UPI_ID}`\n\n"
-                f"*📱 HOW TO PAY:*\n"
-                f"1️⃣ Open any UPI app\n"
-                f"2️⃣ Pay to UPI ID above\n"
-                f"3️⃣ Send screenshot + UTR\n"
-                f"4️⃣ Click 'I HAVE PAID'\n\n"
-                f"⏳ *Auto-cancel in 10 minutes*",
+                f"You get: ₹{final}\n\n"
+                f"After payment, click PAID",
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=reply_markup
+                reply_markup=InlineKeyboardMarkup(keyboard)
             )
         
         return ConversationHandler.END
-        
-    except ValueError:
-        await update.message.reply_text(
-            f"*❌ INVALID INPUT*\n\n"
-            f"*Please enter a valid number:*",
-            parse_mode=ParseMode.MARKDOWN
-        )
+    except:
+        await update.message.reply_text("❌ Enter a valid number")
         return AMOUNT
-    except Exception as e:
-        logger.error(f"❌ Amount handler error: {e}")
-        await update.message.reply_text("⚠️ An error occurred. Please try again.")
-        return ConversationHandler.END
 
 # ==================== SCREENSHOT HANDLER ====================
 async def handle_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        if not update.message.photo:
-            # Add BACK button
-            keyboard = [[InlineKeyboardButton("🔙 BACK TO MAIN MENU", callback_data="main_menu")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            await update.message.reply_text(
-                f"*❌ PLEASE SEND A PHOTO*\n\n"
-                f"*Send the screenshot first, then UTR.*",
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=reply_markup
-            )
-            return SCREENSHOT
-        
-        # Store photo
-        photo = update.message.photo[-1].file_id
-        context.user_data['screenshot'] = photo
-        
-        # Add BACK button
-        keyboard = [[InlineKeyboardButton("🔙 BACK TO MAIN MENU", callback_data="main_menu")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await update.message.reply_text(
-            f"*✅ SCREENSHOT RECEIVED*\n\n"
-            f"*Now please send your UTR number:*",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=reply_markup
-        )
-        
+    if not update.message.photo:
+        await update.message.reply_text("❌ Send a photo first")
         return SCREENSHOT
-    except Exception as e:
-        logger.error(f"❌ Screenshot handler error: {e}")
-        return ConversationHandler.END
+    
+    context.user_data['screenshot'] = update.message.photo[-1].file_id
+    await update.message.reply_text("✅ Now send UTR number:")
+    return SCREENSHOT
 
 # ==================== UTR HANDLER ====================
 async def handle_utr(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        user = update.effective_user
-        utr = update.message.text.strip()
-        
-        # Check if we have screenshot
-        if 'screenshot' not in context.user_data:
-            # Add BACK button
-            keyboard = [[InlineKeyboardButton("🔙 BACK TO MAIN MENU", callback_data="main_menu")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            await update.message.reply_text(
-                f"*❌ PLEASE SEND SCREENSHOT FIRST*",
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=reply_markup
-            )
-            return SCREENSHOT
-        
-        topup_data = context.user_data.get('topup', {})
-        screenshot = context.user_data.get('screenshot')
-        
-        # Create admin message
-        caption = (
-            f"🔔 *NEW PAYMENT VERIFICATION*\n\n"
-            f"👤 *User:* {user.first_name}\n"
-            f"🆔 *ID:* `{user.id}`\n"
-            f"💰 *Amount:* ₹{topup_data.get('amount', 0)}\n"
-            f"💸 *Fee:* ₹{topup_data.get('fee', 0)}\n"
-            f"🎁 *Credit:* ₹{topup_data.get('final_amount', 0)}\n"
-            f"🔢 *UTR:* `{utr}`\n"
-            f"⏰ *Time:* {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        )
-        
-        # Create approve/reject buttons
-        keyboard = [
-            [
-                InlineKeyboardButton("✅ APPROVE", callback_data=f"approve_{user.id}_{topup_data.get('final_amount', 0)}_{utr}"),
-                InlineKeyboardButton("❌ REJECT", callback_data=f"reject_{user.id}_{utr}")
-            ]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        # Send to admin channel
-        await context.bot.send_photo(
-            chat_id=ADMIN_CHANNEL_ID,
-            photo=screenshot,
-            caption=caption,
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=reply_markup
-        )
-        
-        # Add BACK button to confirmation
-        back_keyboard = [[InlineKeyboardButton("🔙 BACK TO MAIN MENU", callback_data="main_menu")]]
-        back_reply_markup = InlineKeyboardMarkup(back_keyboard)
-        
-        # Confirm to user
-        await update.message.reply_text(
-            f"*✅ VERIFICATION SUBMITTED!*\n\n"
-            f"*Your payment is being verified.*\n"
-            f"*You will be notified once approved.*\n\n"
-            f"⏳ *Estimated time: 5-10 minutes*",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=back_reply_markup
-        )
-        
-        # Clear context
-        context.user_data.clear()
-        return ConversationHandler.END
-        
-    except Exception as e:
-        logger.error(f"❌ UTR handler error: {e}")
-        await update.message.reply_text("⚠️ An error occurred. Please try again.")
-        return ConversationHandler.END
-
-# ==================== EMAIL HANDLER ====================
-async def handle_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        user = update.effective_user
-        email = update.message.text.strip()
-        
-        # Simple email validation
-        if "@" not in email or "." not in email:
-            # Add BACK button
-            keyboard = [[InlineKeyboardButton("🔙 BACK TO MAIN MENU", callback_data="main_menu")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            await update.message.reply_text(
-                f"*❌ INVALID EMAIL*\n\n"
-                f"*Please enter a valid email address:*\n"
-                f"*Example:* `example@gmail.com`",
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=reply_markup
-            )
-            return EMAIL
-        
-        purchase = context.user_data.get('purchase')
-        if not purchase:
-            await update.message.reply_text(
-                f"*❌ SESSION EXPIRED*\n\n"
-                f"*Please start over with /start*",
-                parse_mode=ParseMode.MARKDOWN
-            )
-            return ConversationHandler.END
-        
-        # Get balance and process
-        balance = get_user_balance(user.id)
-        if balance < purchase['price']:
-            await update.message.reply_text(
-                f"*❌ INSUFFICIENT BALANCE*\n\n"
-                f"*Please add money first.*",
-                parse_mode=ParseMode.MARKDOWN
-            )
-            return ConversationHandler.END
-        
-        # Deduct balance
-        new_balance = balance - purchase['price']
-        update_user_balance(user.id, new_balance)
-        
-        # Generate order ID
-        order_id = f"GC{random.randint(100000, 999999)}"
-        
-        # Add BACK button
-        keyboard = [[InlineKeyboardButton("🔙 BACK TO MAIN MENU", callback_data="main_menu")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        # Confirm purchase
-        await update.message.reply_text(
-            f"*✅ PURCHASE SUCCESSFUL!*\n\n"
-            f"*🎁 Gift Card:* {purchase['card_name']} ₹{purchase['value']}\n"
-            f"*💰 Price:* ₹{purchase['price']}\n"
-            f"*📧 Sent to:* `{email}`\n"
-            f"*🆔 Order ID:* `{order_id}`\n\n"
-            f"*📌 IMPORTANT:*\n"
-            f"• Check your inbox (and spam folder)\n"
-            f"• Card will arrive in 2-5 minutes\n"
-            f"• Contact support if not received",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=reply_markup
-        )
-        
-        # Add transaction record
-        try:
-            conn = sqlite3.connect('bot_database.db')
-            c = conn.cursor()
-            c.execute('''INSERT INTO purchases 
-                         (user_id, card_type, card_value, price, email, status, timestamp)
-                         VALUES (?, ?, ?, ?, ?, ?, ?)''',
-                      (user.id, purchase['card_name'], purchase['value'], purchase['price'], 
-                       email, "completed", datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-            conn.commit()
-            conn.close()
-        except:
-            pass
-        
-        # Clear context
-        context.user_data.clear()
-        return ConversationHandler.END
-        
-    except Exception as e:
-        logger.error(f"❌ Email handler error: {e}")
-        await update.message.reply_text("⚠️ An error occurred. Please try again.")
-        return ConversationHandler.END
-
-# ==================== SUPPORT MESSAGE HANDLER ====================
-async def handle_support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        user = update.effective_user
-        message = update.message.text.strip()
-        
-        # Save support ticket
-        try:
-            conn = sqlite3.connect('bot_database.db')
-            c = conn.cursor()
-            c.execute('''INSERT INTO support_tickets
-                         (user_id, message, status, timestamp)
-                         VALUES (?, ?, ?, ?)''',
-                      (user.id, message, "pending", datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-            conn.commit()
-            conn.close()
-        except:
-            pass
-        
-        # Notify admin
-        try:
-            admin_msg = (
-                f"🆘 *NEW SUPPORT TICKET*\n\n"
-                f"👤 *User:* {user.first_name}\n"
-                f"🆔 *ID:* `{user.id}`\n"
-                f"📝 *Message:* {message}\n"
-                f"⏰ *Time:* {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-            )
-            await context.bot.send_message(
-                chat_id=ADMIN_ID,
-                text=admin_msg,
-                parse_mode=ParseMode.MARKDOWN
-            )
-        except:
-            pass
-        
-        # Add BACK button
-        keyboard = [[InlineKeyboardButton("🔙 BACK TO MAIN MENU", callback_data="main_menu")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        # Confirm to user
-        await update.message.reply_text(
-            f"*✅ SUPPORT MESSAGE SENT!*\n\n"
-            f"*Your issue has been recorded.*\n"
-            f"*Our support team will contact you soon.*\n\n"
-            f"⏳ *Response time: 24 hours*",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=reply_markup
-        )
-        
-        return ConversationHandler.END
-        
-    except Exception as e:
-        logger.error(f"❌ Support message error: {e}")
-        await update.message.reply_text("⚠️ An error occurred. Please try again.")
-        return ConversationHandler.END
-
-# ==================== AUTO PROOFS ====================
-async def auto_proofs(context: ContextTypes.DEFAULT_TYPE):
-    """Send random purchase proofs to proof channel every 30-60 seconds"""
-    try:
-        # Cool and stylish names with emojis
-        names = [
-            "👑 Raj", "💫 Arjun", "🌟 Kavya", "⚡ Veer", "🔥 Aryan",
-            "💎 Neha", "🎯 Karan", "🚀 Riya", "⭐ Amit", "💥 Priya",
-            "🦁 Simba", "🐅 Tiger", "🦅 Falcon", "🐺 Wolf", "🦊 Fox"
-        ]
-        
-        cards = [
-            "🟦 AMAZON", "🟩 PLAY STORE", "🎟️ BOOKMYSHOW", 
-            "🛍️ MYNTRA", "📦 FLIPKART", "🍕 ZOMATO", 
-            "🛒 BIG BASKET", "🎮 GOOGLE PLAY", "🎬 NETFLIX", 
-            "🎵 SPOTIFY", "💳 AMAZON PAY", "🏏 DREAM11"
-        ]
-        
-        amounts = [500, 1000, 2000, 5000]
-        
-        name = random.choice(names)
-        card = random.choice(cards)
-        amount = random.choice(amounts)
-        
-        # Different message formats
-        formats = [
-            f"⚡ *NEW PURCHASE*\n\n✨ *{name}* just bought\n🎁 {card} *₹{amount}*\n📧 *Delivery:* Email (Instant)\n🕐 at {datetime.now().strftime('%I:%M %p')}",
-            
-            f"🎉 *FRESH ORDER*\n\n👤 *Buyer:* {name}\n💳 *Card:* {card}\n💰 *Value:* ₹{amount}\n📨 *Status:* Sent to Email\n✅ *Delivery:* Instant",
-            
-            f"🛒 *ORDER COMPLETED*\n\n━━━━━━━━━━━━━━\n👤 {name}\n🎁 {card}\n💵 ₹{amount}\n━━━━━━━━━━━━━━\n📧 *Email Delivery*\n⚡ *Instant*",
-            
-            f"⭐ *LIVE PURCHASE*\n\n🔹 *User:* {name}\n🔹 *Product:* {card}\n🔹 *Amount:* ₹{amount}\n🔹 *Time:* {datetime.now().strftime('%I:%M %p')}\n✅ *Success*"
-        ]
-        
-        message = random.choice(formats)
-        
-        await context.bot.send_message(
-            chat_id=PROOF_CHANNEL,
-            text=message,
-            parse_mode=ParseMode.MARKDOWN
-        )
-        
-        logger.info(f"✅ Auto proof sent: {name} - {card} ₹{amount}")
-        
-    except Exception as e:
-        logger.error(f"❌ Auto proof error: {e}")
-
-# ==================== ADMIN CALLBACK ====================
-async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        query = update.callback_query
-        await query.answer()
-        
-        data = query.data
-        parts = data.split("_")
-        
-        if parts[0] == "approve":
-            user_id = int(parts[1])
-            amount = int(parts[2])
-            utr = parts[3]
-            
-            # Get current balance
-            balance = get_user_balance(user_id)
-            new_balance = balance + amount
-            
-            # Update balance
-            update_user_balance(user_id, new_balance)
-            
-            # Add transaction record
-            try:
-                conn = sqlite3.connect('bot_database.db')
-                c = conn.cursor()
-                c.execute('''INSERT INTO transactions 
-                             (user_id, amount, type, status, utr, timestamp)
-                             VALUES (?, ?, ?, ?, ?, ?)''',
-                          (user_id, amount, "credit", "completed", utr, 
-                           datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-                conn.commit()
-                conn.close()
-            except:
-                pass
-            
-            # Notify user
-            try:
-                await context.bot.send_message(
-                    chat_id=user_id,
-                    text=(
-                        f"*✅ PAYMENT APPROVED!*\n\n"
-                        f"*Amount:* ₹{amount} added to your balance\n"
-                        f"*New Balance:* ₹{new_balance}\n"
-                        f"*UTR:* `{utr}`\n\n"
-                        f"*Thank you for using our service!* 🙏"
-                    ),
-                    parse_mode=ParseMode.MARKDOWN
-                )
-            except:
-                pass
-            
-            # Update admin message
-            await query.edit_message_caption(
-                caption=query.message.caption + "\n\n✅ *APPROVED BY ADMIN*",
-                parse_mode=ParseMode.MARKDOWN
-            )
-        
-        elif parts[0] == "reject":
-            user_id = int(parts[1])
-            utr = parts[2]
-            
-            # Notify user
-            try:
-                await context.bot.send_message(
-                    chat_id=user_id,
-                    text=(
-                        f"*❌ PAYMENT REJECTED*\n\n"
-                        f"*UTR:* `{utr}`\n"
-                        f"*Reason:* Payment not verified\n\n"
-                        f"*Please try again or contact support.*"
-                    ),
-                    parse_mode=ParseMode.MARKDOWN
-                )
-            except:
-                pass
-            
-            # Update admin message
-            await query.edit_message_caption(
-                caption=query.message.caption + "\n\n❌ *REJECTED BY ADMIN*",
-                parse_mode=ParseMode.MARKDOWN
-            )
-    except Exception as e:
-        logger.error(f"❌ Admin callback error: {e}")
-
-# ==================== BROADCAST COMMAND ====================
-async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        user = update.effective_user
-        
-        # Admin only
-        if user.id != ADMIN_ID:
-            await update.message.reply_text(
-                f"*❌ UNAUTHORIZED*\n\n"
-                f"*This command is for admins only.*",
-                parse_mode=ParseMode.MARKDOWN
-            )
-            return
-        
-        # Check if message provided
-        if not context.args:
-            await update.message.reply_text(
-                f"*📢 BROADCAST COMMAND*\n\n"
-                f"*Usage:* `/broadcast Your message here`\n\n"
-                f"*Example:* `/broadcast 🎉 New offer: 10% off on all cards!`",
-                parse_mode=ParseMode.MARKDOWN
-            )
-            return
-        
-        message = " ".join(context.args)
-        
-        # Get all users
-        conn = sqlite3.connect('bot_database.db')
-        c = conn.cursor()
-        c.execute("SELECT user_id FROM users")
-        users = c.fetchall()
-        conn.close()
-        
-        sent = 0
-        failed = 0
-        
-        status_msg = await update.message.reply_text(
-            f"*📢 BROADCAST STARTED*\n\n"
-            f"*Sending to {len(users)} users...*",
-            parse_mode=ParseMode.MARKDOWN
-        )
-        
-        for user_id in users:
-            try:
-                await context.bot.send_message(
-                    chat_id=user_id[0],
-                    text=(
-                        f"*📢 ADMIN BROADCAST*\n\n"
-                        f"{message}\n\n"
-                        f"*━ GIFT CARD BOT ━*"
-                    ),
-                    parse_mode=ParseMode.MARKDOWN
-                )
-                sent += 1
-                await asyncio.sleep(0.05)
-            except:
-                failed += 1
-            
-            # Update status every 10 users
-            if (sent + failed) % 10 == 0:
-                await status_msg.edit_text(
-                    f"*📢 BROADCASTING...*\n\n"
-                    f"*Sent:* {sent}\n"
-                    f"*Failed:* {failed}\n"
-                    f"*Total:* {len(users)}",
-                    parse_mode=ParseMode.MARKDOWN
-                )
-        
-        await status_msg.edit_text(
-            f"*📢 BROADCAST COMPLETED*\n\n"
-            f"*✅ Sent:* {sent}\n"
-            f"*❌ Failed:* {failed}\n"
-            f"*Total:* {len(users)}",
-            parse_mode=ParseMode.MARKDOWN
-        )
-    except Exception as e:
-        logger.error(f"❌ Broadcast error: {e}")
-        await update.message.reply_text("⚠️ Broadcast failed.")
-
-# ==================== CANCEL ====================
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Add BACK button
-    keyboard = [[InlineKeyboardButton("🔙 BACK TO MAIN MENU", callback_data="main_menu")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    user = update.effective_user
+    utr = update.message.text.strip()
     
-    await update.message.reply_text(
-        f"*❌ CANCELLED*\n\n"
-        f"*Send /start to begin again.*",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=reply_markup
+    if 'screenshot' not in context.user_data:
+        await update.message.reply_text("❌ Send screenshot first")
+        return SCREENSHOT
+    
+    data = context.user_data.get('topup', {})
+    
+    # Forward to admin
+    keyboard = [[
+        InlineKeyboardButton("✅ Approve", callback_data=f"approve_{user.id}_{data.get('final',0)}_{utr}"),
+        InlineKeyboardButton("❌ Reject", callback_data=f"reject_{user.id}_{utr}")
+    ]]
+    
+    await context.bot.send_photo(
+        chat_id=ADMIN_CHANNEL_ID,
+        photo=context.user_data['screenshot'],
+        caption=f"User: {user.first_name}\nAmount: ₹{data.get('amount',0)}\nUTR: {utr}",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
+    
+    await update.message.reply_text("✅ Verification submitted!")
     context.user_data.clear()
     return ConversationHandler.END
 
-# ==================== ERROR HANDLER ====================
-async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.error(f"❌ Update {update} caused error {context.error}")
+# ==================== EMAIL HANDLER ====================
+async def handle_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    email = update.message.text.strip()
+    
+    if "@" not in email:
+        await update.message.reply_text("❌ Invalid email")
+        return EMAIL
+    
+    purchase = context.user_data.get('purchase')
+    if not purchase:
+        await update.message.reply_text("❌ Session expired")
+        return ConversationHandler.END
+    
+    user = update.effective_user
+    balance = get_user_balance(user.id)
+    
+    if balance < purchase['price']:
+        await update.message.reply_text("❌ Insufficient balance")
+        return ConversationHandler.END
+    
+    # Process purchase
+    new_balance = balance - purchase['price']
+    update_user_balance(user.id, new_balance)
+    
+    await update.message.reply_text(
+        f"*✅ SUCCESS!*\n\n"
+        f"*{purchase['card']} ₹{purchase['value']}*\n"
+        f"*Sent to:* {email}",
+        parse_mode=ParseMode.MARKDOWN
+    )
+    
+    context.user_data.clear()
+    return ConversationHandler.END
 
-# ==================== MAIN FUNCTION ====================
-def main():
+# ==================== SUPPORT MESSAGE HANDLER ====================
+async def handle_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    message = update.message.text.strip()
+    
+    # Notify admin
     try:
-        # Create application
-        app = Application.builder().token(BOT_TOKEN).build()
-        
-        # Conversation handler for amount input
-        amount_conv = ConversationHandler(
-            entry_points=[CallbackQueryHandler(button_callback, pattern="^upi$")],
-            states={
-                AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_amount)]
-            },
-            fallbacks=[CommandHandler("cancel", cancel)]
+        await context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=f"🆘 Support from {user.first_name}:\n{message}"
         )
+    except:
+        pass
+    
+    await update.message.reply_text(
+        "✅ *Message sent!*\n\nSupport will contact you soon.",
+        parse_mode=ParseMode.MARKDOWN
+    )
+    return ConversationHandler.END
+
+# ==================== ADMIN CALLBACK ====================
+async def admin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    data = query.data
+    parts = data.split("_")
+    
+    if parts[0] == "approve":
+        user_id = int(parts[1])
+        amount = int(parts[2])
         
-        # Conversation handler for payment verification
-        payment_conv = ConversationHandler(
-            entry_points=[CallbackQueryHandler(button_callback, pattern="^paid$")],
-            states={
-                SCREENSHOT: [
-                    MessageHandler(filters.PHOTO, handle_screenshot),
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, handle_utr)
-                ]
-            },
-            fallbacks=[CommandHandler("cancel", cancel)]
+        balance = get_user_balance(user_id)
+        update_user_balance(user_id, balance + amount)
+        
+        await context.bot.send_message(
+            chat_id=user_id,
+            text=f"✅ Payment approved! ₹{amount} added"
         )
-        
-        # Conversation handler for email input
-        email_conv = ConversationHandler(
-            entry_points=[CallbackQueryHandler(button_callback, pattern="^buy_")],
-            states={
-                EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_email)]
-            },
-            fallbacks=[CommandHandler("cancel", cancel)]
+        await query.edit_message_caption("✅ Approved")
+    
+    elif parts[0] == "reject":
+        user_id = int(parts[1])
+        await context.bot.send_message(
+            chat_id=user_id,
+            text="❌ Payment rejected"
         )
+        await query.edit_message_caption("❌ Rejected")
+
+# ==================== AUTO PROOFS ====================
+async def auto_proofs(context: ContextTypes.DEFAULT_TYPE):
+    try:
+        names = ["👑 Raj", "💫 Arjun", "🌟 Kavya", "⚡ Veer", "🔥 Aryan"]
+        cards = ["🟦 AMAZON", "🟩 PLAY STORE", "📦 FLIPKART", "🍕 ZOMATO"]
+        amounts = [500, 1000, 2000]
         
-        # Conversation handler for support messages
-        support_conv = ConversationHandler(
-            entry_points=[CallbackQueryHandler(button_callback, pattern="^support$")],
-            states={
-                SUPPORT_MSG: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_support_message)]
-            },
-            fallbacks=[CommandHandler("cancel", cancel)]
+        msg = f"⚡ *{random.choice(names)}* bought {random.choice(cards)} ₹{random.choice(amounts)}"
+        
+        await context.bot.send_message(
+            chat_id=PROOF_CHANNEL,
+            text=msg,
+            parse_mode=ParseMode.MARKDOWN
         )
-        
-        # Add handlers
-        app.add_handler(CommandHandler("start", start))
-        app.add_handler(CommandHandler("broadcast", broadcast))
-        app.add_handler(amount_conv)
-        app.add_handler(payment_conv)
-        app.add_handler(email_conv)
-        app.add_handler(support_conv)
-        app.add_handler(CallbackQueryHandler(admin_callback, pattern="^(approve_|reject_)"))
-        app.add_handler(CallbackQueryHandler(button_callback))
-        app.add_error_handler(error_handler)
-        
-        # Auto proofs job (every 30-60 seconds)
-        if app.job_queue:
-            # Send first proof after 10 seconds, then every 30-60 seconds
-            app.job_queue.run_repeating(auto_proofs, interval=random.randint(30, 60), first=10)
-            print("✅ Auto proofs scheduled (every 30-60 seconds)")
-        
-        logger.info("✅ Bot started successfully!")
-        print("╔════════════════════════════════════╗")
-        print("║     🤖 GIFT CARD BOT IS LIVE      ║")
-        print("╠════════════════════════════════════╣")
-        print(f"║ 📢 Main Channel: @gift_card_main   ║")
-        print(f"║ 📊 Proof Channel: @gift_card_log   ║")
-        print(f"║ 👑 Admin ID: {ADMIN_ID}            ║")
-        print(f"║ 💳 UPI ID: {UPI_ID}                ║")
-        print("╚════════════════════════════════════╝")
-        
-        app.run_polling(allowed_updates=Update.ALL_TYPES)
-        
-    except Exception as e:
-        logger.error(f"❌ Main error: {e}")
-        print(f"❌ Bot crashed: {e}")
+    except:
+        pass
+
+# ==================== CANCEL ====================
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("❌ Cancelled")
+    context.user_data.clear()
+    return ConversationHandler.END
+
+# ==================== MAIN ====================
+def main():
+    app = Application.builder().token(BOT_TOKEN).build()
+    
+    # Add handlers
+    app.add_handler(CommandHandler("start", start))
+    
+    # Callback handler for ALL buttons
+    app.add_handler(CallbackQueryHandler(button_handler))
+    
+    # Admin callback handler
+    app.add_handler(CallbackQueryHandler(admin_handler, pattern="^(approve_|reject_)"))
+    
+    # Conversation handlers
+    app.add_handler(ConversationHandler(
+        entry_points=[CallbackQueryHandler(button_handler, pattern="^upi$")],
+        states={AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_amount)]},
+        fallbacks=[CommandHandler("cancel", cancel)]
+    ))
+    
+    app.add_handler(ConversationHandler(
+        entry_points=[CallbackQueryHandler(button_handler, pattern="^paid$")],
+        states={
+            SCREENSHOT: [
+                MessageHandler(filters.PHOTO, handle_screenshot),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_utr)
+            ]
+        },
+        fallbacks=[CommandHandler("cancel", cancel)]
+    ))
+    
+    app.add_handler(ConversationHandler(
+        entry_points=[CallbackQueryHandler(button_handler, pattern="^buy_")],
+        states={EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_email)]},
+        fallbacks=[CommandHandler("cancel", cancel)]
+    ))
+    
+    app.add_handler(ConversationHandler(
+        entry_points=[CallbackQueryHandler(button_handler, pattern="^support$")],
+        states={SUPPORT_MSG: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_support)]},
+        fallbacks=[CommandHandler("cancel", cancel)]
+    ))
+    
+    # Auto proofs
+    if app.job_queue:
+        app.job_queue.run_repeating(auto_proofs, interval=45, first=10)
+    
+    print("✅ Bot is running...")
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
