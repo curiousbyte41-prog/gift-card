@@ -23,6 +23,9 @@ PROOF_CHANNEL = "@gift_card_log"
 ADMIN_CHANNEL_ID = -1003607749028
 UPI_ID = "helobiy41@ptyes"
 
+# QR Code file path (you'll upload this)
+QR_CODE_PATH = "qr.jpg"  # Make sure to upload this file
+
 # Gift Card Data
 GIFT_CARDS = {
     "amazon": {"name": "🟦 AMAZON", "emoji": "🟦"},
@@ -562,22 +565,45 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await update.message.reply_text(
-            f"*💳 PAYMENT DETAILS*\n\n"
-            f"*Amount to Pay:* ₹{amount}\n"
-            f"{fee_text}\n"
-            f"*You will receive:* ₹{final_amount}\n\n"
-            f"*UPI ID:* `{UPI_ID}`\n\n"
-            f"*📱 HOW TO PAY:*\n"
-            f"1️⃣ Open any UPI app (Google Pay, PhonePe, etc.)\n"
-            f"2️⃣ Pay to the UPI ID above\n"
-            f"3️⃣ Take a SCREENSHOT of payment\n"
-            f"4️⃣ Copy the UTR number\n"
-            f"5️⃣ Click 'I HAVE PAID' below\n\n"
-            f"⏳ *Auto-cancel in 10 minutes*",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=reply_markup
-        )
+        # Try to send QR code if file exists
+        try:
+            with open(QR_CODE_PATH, 'rb') as qr_file:
+                await update.message.reply_photo(
+                    photo=qr_file,
+                    caption=(
+                        f"*💳 PAYMENT DETAILS*\n\n"
+                        f"*Amount to Pay:* ₹{amount}\n"
+                        f"{fee_text}\n"
+                        f"*You will receive:* ₹{final_amount}\n\n"
+                        f"*UPI ID:* `{UPI_ID}`\n\n"
+                        f"*📱 HOW TO PAY:*\n"
+                        f"1️⃣ Scan QR code or pay to UPI ID\n"
+                        f"2️⃣ Take a SCREENSHOT of payment\n"
+                        f"3️⃣ Copy the UTR number\n"
+                        f"4️⃣ Click 'I HAVE PAID' below\n\n"
+                        f"⏳ *Auto-cancel in 10 minutes*"
+                    ),
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=reply_markup
+                )
+        except:
+            # If QR code not found, send without QR
+            await update.message.reply_text(
+                f"*💳 PAYMENT DETAILS*\n\n"
+                f"*Amount to Pay:* ₹{amount}\n"
+                f"{fee_text}\n"
+                f"*You will receive:* ₹{final_amount}\n\n"
+                f"*UPI ID:* `{UPI_ID}`\n\n"
+                f"*📱 HOW TO PAY:*\n"
+                f"1️⃣ Open any UPI app (Google Pay, PhonePe, etc.)\n"
+                f"2️⃣ Pay to the UPI ID above\n"
+                f"3️⃣ Take a SCREENSHOT of payment\n"
+                f"4️⃣ Copy the UTR number\n"
+                f"5️⃣ Click 'I HAVE PAID' below\n\n"
+                f"⏳ *Auto-cancel in 10 minutes*",
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=reply_markup
+            )
         
         return ConversationHandler.END
         
@@ -599,6 +625,10 @@ async def paid_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
         await query.answer()
         
+        # Add BACK button to main menu
+        keyboard = [[InlineKeyboardButton("🔙 BACK TO MAIN MENU", callback_data="main_menu")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
         await query.edit_message_text(
             f"*📤 SEND PAYMENT PROOF*\n\n"
             f"*Please send:*\n"
@@ -606,7 +636,8 @@ async def paid_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"2️⃣ *Your UTR NUMBER* (in text)\n\n"
             f"*Example UTR:* `SBIN1234567890`\n\n"
             f"*Send both in this chat.*",
-            parse_mode=ParseMode.MARKDOWN
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=reply_markup
         )
         
         return SCREENSHOT
@@ -618,10 +649,15 @@ async def paid_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         if not update.message.photo:
+            # Add BACK button
+            keyboard = [[InlineKeyboardButton("🔙 BACK TO MAIN MENU", callback_data="main_menu")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
             await update.message.reply_text(
                 f"*❌ PLEASE SEND A PHOTO*\n\n"
                 f"*Send the screenshot first, then UTR.*",
-                parse_mode=ParseMode.MARKDOWN
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=reply_markup
             )
             return SCREENSHOT
         
@@ -629,10 +665,15 @@ async def handle_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE):
         photo = update.message.photo[-1].file_id
         context.user_data['screenshot'] = photo
         
+        # Add BACK button
+        keyboard = [[InlineKeyboardButton("🔙 BACK TO MAIN MENU", callback_data="main_menu")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
         await update.message.reply_text(
             f"*✅ SCREENSHOT RECEIVED*\n\n"
             f"*Now please send your UTR number:*",
-            parse_mode=ParseMode.MARKDOWN
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=reply_markup
         )
         
         return SCREENSHOT
@@ -648,9 +689,14 @@ async def handle_utr(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Check if we have screenshot
         if 'screenshot' not in context.user_data:
+            # Add BACK button
+            keyboard = [[InlineKeyboardButton("🔙 BACK TO MAIN MENU", callback_data="main_menu")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
             await update.message.reply_text(
                 f"*❌ PLEASE SEND SCREENSHOT FIRST*",
-                parse_mode=ParseMode.MARKDOWN
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=reply_markup
             )
             return SCREENSHOT
         
@@ -687,13 +733,18 @@ async def handle_utr(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=reply_markup
         )
         
+        # Add BACK button to confirmation
+        back_keyboard = [[InlineKeyboardButton("🔙 BACK TO MAIN MENU", callback_data="main_menu")]]
+        back_reply_markup = InlineKeyboardMarkup(back_keyboard)
+        
         # Confirm to user
         await update.message.reply_text(
             f"*✅ VERIFICATION SUBMITTED!*\n\n"
             f"*Your payment is being verified.*\n"
             f"*You will be notified once approved.*\n\n"
             f"⏳ *Estimated time: 5-10 minutes*",
-            parse_mode=ParseMode.MARKDOWN
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=back_reply_markup
         )
         
         # Clear context
@@ -713,11 +764,16 @@ async def handle_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Simple email validation
         if "@" not in email or "." not in email:
+            # Add BACK button
+            keyboard = [[InlineKeyboardButton("🔙 BACK TO MAIN MENU", callback_data="main_menu")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
             await update.message.reply_text(
                 f"*❌ INVALID EMAIL*\n\n"
                 f"*Please enter a valid email address:*\n"
                 f"*Example:* `example@gmail.com`",
-                parse_mode=ParseMode.MARKDOWN
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=reply_markup
             )
             return EMAIL
         
@@ -747,6 +803,10 @@ async def handle_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Generate order ID
         order_id = f"GC{random.randint(100000, 999999)}"
         
+        # Add BACK button
+        keyboard = [[InlineKeyboardButton("🔙 BACK TO MAIN MENU", callback_data="main_menu")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
         # Confirm purchase
         await update.message.reply_text(
             f"*✅ PURCHASE SUCCESSFUL!*\n\n"
@@ -758,7 +818,8 @@ async def handle_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"• Check your inbox (and spam folder)\n"
             f"• Card will arrive in 2-5 minutes\n"
             f"• Contact support if not received",
-            parse_mode=ParseMode.MARKDOWN
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=reply_markup
         )
         
         # Add transaction record
@@ -988,10 +1049,15 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ==================== CANCEL ====================
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Add BACK button
+    keyboard = [[InlineKeyboardButton("🔙 BACK TO MAIN MENU", callback_data="main_menu")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
     await update.message.reply_text(
         f"*❌ CANCELLED*\n\n"
         f"*Send /start to begin again.*",
-        parse_mode=ParseMode.MARKDOWN
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=reply_markup
     )
     context.user_data.clear()
     return ConversationHandler.END
@@ -1057,6 +1123,7 @@ def main():
         print(f"║ 📢 Main Channel: @gift_card_main   ║")
         print(f"║ 📊 Proof Channel: @gift_card_log   ║")
         print(f"║ 👑 Admin ID: {ADMIN_ID}            ║")
+        print(f"║ 💳 UPI ID: {UPI_ID}                ║")
         print("╚════════════════════════════════════╝")
         
         app.run_polling(allowed_updates=Update.ALL_TYPES)
