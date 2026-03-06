@@ -2,9 +2,8 @@ import logging
 import sqlite3
 import asyncio
 import random
-import string
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes, ConversationHandler
 from telegram.constants import ParseMode
@@ -19,8 +18,8 @@ logger = logging.getLogger(__name__)
 # ==================== CONFIGURATION ====================
 BOT_TOKEN = os.getenv('BOT_TOKEN', "8646034766:AAGXkMglnsc72ew1aGcFmWnZziwb8nfS2S8")
 ADMIN_ID = int(os.getenv('ADMIN_ID', 6185091342))
-MAIN_CHANNEL = os.getenv('MAIN_CHANNEL', "@GIFT_CARD_MAIN")
-PROOF_CHANNEL = os.getenv('PROOF_CHANNEL', "@GIFT_CARD_LOGS_PROOF")
+MAIN_CHANNEL = os.getenv('MAIN_CHANNEL', "@gaift_card_main")
+PROOF_CHANNEL = os.getenv('PROOF_CHANNEL', "@gift_card_log")
 ADMIN_CHANNEL_ID = int(os.getenv('ADMIN_CHANNEL_ID', -1003607749028))
 UPI_ID = os.getenv('UPI_ID', "helobiy41@ptyes")
 
@@ -87,9 +86,9 @@ def init_db():
         
         conn.commit()
         conn.close()
-        logger.info("Database initialized successfully")
+        logger.info("✅ Database initialized successfully")
     except Exception as e:
-        logger.error(f"Database init error: {e}")
+        logger.error(f"❌ Database init error: {e}")
 
 init_db()
 
@@ -103,7 +102,7 @@ def get_user_balance(user_id):
         conn.close()
         return result[0] if result else 0
     except Exception as e:
-        logger.error(f"Balance fetch error: {e}")
+        logger.error(f"❌ Balance fetch error: {e}")
         return 0
 
 def update_user_balance(user_id, amount):
@@ -115,7 +114,7 @@ def update_user_balance(user_id, amount):
         conn.commit()
         conn.close()
     except Exception as e:
-        logger.error(f"Balance update error: {e}")
+        logger.error(f"❌ Balance update error: {e}")
 
 # ==================== CHECK MEMBERSHIP ====================
 async def check_membership(user_id, context):
@@ -123,7 +122,7 @@ async def check_membership(user_id, context):
         member = await context.bot.get_chat_member(chat_id=MAIN_CHANNEL, user_id=user_id)
         return member.status in ['member', 'administrator', 'creator']
     except Exception as e:
-        logger.error(f"Membership check error: {e}")
+        logger.error(f"❌ Membership check error: {e}")
         return False
 
 # ==================== START COMMAND ====================
@@ -131,23 +130,25 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         user = update.effective_user
         
+        # Check if user is in main channel
         is_member = await check_membership(user.id, context)
         
         if not is_member:
-            keyboard = [[InlineKeyboardButton("📢 JOIN CHANNEL", url=f"https://t.me/GIFT_CARD_MAIN")]]
+            # Create channel button
+            keyboard = [[InlineKeyboardButton("📢 JOIN MAIN CHANNEL", url=f"https://t.me/gaift_card_main")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
             await update.message.reply_text(
                 f"*👋 WELCOME {user.first_name}!*\n\n"
                 f"⚠️ *To use this bot, you MUST join our main channel first:*\n"
-                f"👉 @GIFT_CARD_MAIN\n\n"
+                f"👉 {MAIN_CHANNEL}\n\n"
                 f"*After joining, click /start again.*",
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=reply_markup
             )
             return
         
-        # Save user
+        # Save or update user
         conn = sqlite3.connect('bot_database.db')
         c = conn.cursor()
         c.execute('''INSERT OR REPLACE INTO users 
@@ -157,8 +158,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.commit()
         conn.close()
         
+        # Get balance
         balance = get_user_balance(user.id)
         
+        # Create main menu
         keyboard = [
             [InlineKeyboardButton("🎁 GIFT CARD", callback_data="giftcard")],
             [InlineKeyboardButton("💰 TOP UP", callback_data="topup")],
@@ -177,7 +180,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=reply_markup
         )
     except Exception as e:
-        logger.error(f"Start error: {e}")
+        logger.error(f"❌ Start error: {e}")
         await update.message.reply_text("⚠️ Something went wrong. Please try again later.")
 
 # ==================== CALLBACK HANDLER ====================
@@ -189,20 +192,22 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = query.from_user
         data = query.data
         
+        # Check membership for all actions
         is_member = await check_membership(user.id, context)
         if not is_member:
-            keyboard = [[InlineKeyboardButton("📢 JOIN CHANNEL", url=f"https://t.me/GIFT_CARD_MAIN")]]
+            keyboard = [[InlineKeyboardButton("📢 JOIN CHANNEL", url=f"https://t.me/gaift_card_main")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
             await query.edit_message_text(
                 f"*⚠️ ACCESS DENIED*\n\n"
                 f"*You must join our main channel first:*\n"
-                f"👉 @GIFT_CARD_MAIN",
+                f"👉 {MAIN_CHANNEL}",
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=reply_markup
             )
             return
         
+        # ========== GIFT CARD SECTION ==========
         if data == "giftcard":
             keyboard = []
             for card_id, card in GIFT_CARDS.items():
@@ -221,6 +226,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=reply_markup
             )
         
+        # Card selection
         elif data.startswith("card_"):
             card_id = data.replace("card_", "")
             card = GIFT_CARDS[card_id]
@@ -243,6 +249,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=reply_markup
             )
         
+        # Buy card
         elif data.startswith("buy_"):
             parts = data.split("_")
             card_id = parts[1]
@@ -269,6 +276,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 return
             
+            # Store purchase info
             context.user_data['purchase'] = {
                 'card_id': card_id,
                 'card_name': card['name'],
@@ -289,6 +297,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             return EMAIL
         
+        # ========== TOP UP SECTION ==========
         elif data == "topup":
             keyboard = [
                 [InlineKeyboardButton("📱 UPI", callback_data="upi")],
@@ -326,9 +335,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.MARKDOWN
             )
         
+        # ========== BALANCE SECTION ==========
         elif data == "balance":
             balance = get_user_balance(user.id)
             
+            # Get recent transactions
             conn = sqlite3.connect('bot_database.db')
             c = conn.cursor()
             c.execute('''SELECT amount, type, timestamp FROM transactions 
@@ -364,6 +375,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=reply_markup
             )
         
+        # ========== SUPPORT SECTION ==========
         elif data == "support":
             keyboard = [[InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -377,8 +389,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=reply_markup
             )
         
+        # ========== PROOFS SECTION ==========
         elif data == "proofs":
-            keyboard = [[InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")]]
+            keyboard = [
+                [InlineKeyboardButton("📢 VIEW PROOF CHANNEL", url=f"https://t.me/gift_card_log")],
+                [InlineKeyboardButton("🏠 MAIN MENU", callback_data="main_menu")]
+            ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
             await query.edit_message_text(
@@ -393,6 +409,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=reply_markup
             )
         
+        # ========== MAIN MENU ==========
         elif data == "main_menu":
             balance = get_user_balance(user.id)
             
@@ -415,13 +432,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
     
     except Exception as e:
-        logger.error(f"Callback error: {e}")
+        logger.error(f"❌ Callback error: {e}")
         await query.edit_message_text("⚠️ An error occurred. Please try again.")
 
 # ==================== AMOUNT HANDLER ====================
 async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        user = update.effective_user
         text = update.message.text.strip()
         
         amount = int(text)
@@ -434,6 +450,7 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return AMOUNT
         
+        # Calculate fee
         if amount < 120:
             fee = int(amount * 0.2)
             final_amount = amount - fee
@@ -441,14 +458,16 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
             fee = 0
             final_amount = amount
         
+        # Store in context
         context.user_data['topup'] = {
             'amount': amount,
             'final_amount': final_amount,
             'fee': fee
         }
         
+        # Create verify button
         keyboard = [
-            [InlineKeyboardButton("✅ VERIFY", callback_data="verify_payment")],
+            [InlineKeyboardButton("✅ VERIFY PAYMENT", callback_data="verify_payment")],
             [InlineKeyboardButton("❌ CANCEL", callback_data="topup")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -478,7 +497,7 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return AMOUNT
     except Exception as e:
-        logger.error(f"Amount handler error: {e}")
+        logger.error(f"❌ Amount handler error: {e}")
         await update.message.reply_text("⚠️ An error occurred. Please try again.")
         return ConversationHandler.END
 
@@ -499,7 +518,7 @@ async def verify_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         return SCREENSHOT
     except Exception as e:
-        logger.error(f"Verify payment error: {e}")
+        logger.error(f"❌ Verify payment error: {e}")
         return ConversationHandler.END
 
 # ==================== SCREENSHOT HANDLER ====================
@@ -513,6 +532,7 @@ async def handle_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return SCREENSHOT
         
+        # Store photo
         photo = update.message.photo[-1].file_id
         context.user_data['screenshot'] = photo
         
@@ -524,7 +544,7 @@ async def handle_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         return SCREENSHOT
     except Exception as e:
-        logger.error(f"Screenshot handler error: {e}")
+        logger.error(f"❌ Screenshot handler error: {e}")
         return ConversationHandler.END
 
 # ==================== UTR HANDLER ====================
@@ -533,6 +553,7 @@ async def handle_utr(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         utr = update.message.text.strip()
         
+        # Check if we have screenshot
         if 'screenshot' not in context.user_data:
             await update.message.reply_text(
                 f"*❌ PLEASE SEND SCREENSHOT FIRST*",
@@ -543,6 +564,7 @@ async def handle_utr(update: Update, context: ContextTypes.DEFAULT_TYPE):
         topup_data = context.user_data.get('topup', {})
         screenshot = context.user_data.get('screenshot')
         
+        # Create admin message
         caption = (
             f"*🔔 NEW PAYMENT VERIFICATION*\n\n"
             f"*User:* {user.first_name}\n"
@@ -554,6 +576,7 @@ async def handle_utr(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"*Time:* {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         )
         
+        # Create approve/reject buttons
         keyboard = [
             [
                 InlineKeyboardButton("✅ APPROVE", callback_data=f"approve_{user.id}_{topup_data.get('final_amount', 0)}_{utr}"),
@@ -562,6 +585,7 @@ async def handle_utr(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
+        # Send to admin channel
         await context.bot.send_photo(
             chat_id=ADMIN_CHANNEL_ID,
             photo=screenshot,
@@ -570,6 +594,7 @@ async def handle_utr(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=reply_markup
         )
         
+        # Confirm to user
         await update.message.reply_text(
             f"*✅ VERIFICATION SUBMITTED!*\n\n"
             f"*Your payment is being verified.*\n"
@@ -578,11 +603,12 @@ async def handle_utr(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.MARKDOWN
         )
         
+        # Clear context
         context.user_data.clear()
         return ConversationHandler.END
         
     except Exception as e:
-        logger.error(f"UTR handler error: {e}")
+        logger.error(f"❌ UTR handler error: {e}")
         await update.message.reply_text("⚠️ An error occurred. Please try again.")
         return ConversationHandler.END
 
@@ -592,6 +618,7 @@ async def handle_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         email = update.message.text.strip()
         
+        # Simple email validation
         if "@" not in email or "." not in email:
             await update.message.reply_text(
                 f"*❌ INVALID EMAIL*\n\n"
@@ -609,6 +636,7 @@ async def handle_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return ConversationHandler.END
         
+        # Get balance and process
         balance = get_user_balance(user.id)
         if balance < purchase['price']:
             await update.message.reply_text(
@@ -617,9 +645,11 @@ async def handle_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return ConversationHandler.END
         
+        # Deduct balance
         new_balance = balance - purchase['price']
         update_user_balance(user.id, new_balance)
         
+        # Confirm purchase
         await update.message.reply_text(
             f"*✅ PURCHASE SUCCESSFUL!*\n\n"
             f"*🎁 Gift Card:* {purchase['card_name']} ₹{purchase['value']}\n"
@@ -630,7 +660,7 @@ async def handle_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.MARKDOWN
         )
         
-        # Random proof
+        # Random proof (50% chance)
         if random.choice([True, False]):
             try:
                 await context.bot.send_message(
@@ -645,19 +675,21 @@ async def handle_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except:
                 pass
         
+        # Clear context
         context.user_data.clear()
         return ConversationHandler.END
         
     except Exception as e:
-        logger.error(f"Email handler error: {e}")
+        logger.error(f"❌ Email handler error: {e}")
         await update.message.reply_text("⚠️ An error occurred. Please try again.")
         return ConversationHandler.END
 
-# ==================== BROADCAST ====================
+# ==================== BROADCAST COMMAND ====================
 async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         user = update.effective_user
         
+        # Admin only
         if user.id != ADMIN_ID:
             await update.message.reply_text(
                 f"*❌ UNAUTHORIZED*\n\n"
@@ -666,17 +698,19 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
         
+        # Check if message provided
         if not context.args:
             await update.message.reply_text(
                 f"*📢 BROADCAST COMMAND*\n\n"
                 f"*Usage:* `/broadcast Your message here`\n\n"
-                f"*Example:* `/broadcast 🎉 New offer: 10% off!`",
+                f"*Example:* `/broadcast 🎉 New offer: 10% off on all cards!`",
                 parse_mode=ParseMode.MARKDOWN
             )
             return
         
         message = " ".join(context.args)
         
+        # Get all users
         conn = sqlite3.connect('bot_database.db')
         c = conn.cursor()
         c.execute("SELECT user_id FROM users")
@@ -704,10 +738,11 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.MARKDOWN
                 )
                 sent += 1
-                await asyncio.sleep(0.05)
+                await asyncio.sleep(0.05)  # Small delay
             except:
                 failed += 1
             
+            # Update status every 10 users
             if (sent + failed) % 10 == 0:
                 await status_msg.edit_text(
                     f"*📢 BROADCASTING...*\n\n"
@@ -725,11 +760,12 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.MARKDOWN
         )
     except Exception as e:
-        logger.error(f"Broadcast error: {e}")
+        logger.error(f"❌ Broadcast error: {e}")
         await update.message.reply_text("⚠️ Broadcast failed.")
 
 # ==================== AUTO PROOFS ====================
 async def auto_proofs(context: ContextTypes.DEFAULT_TYPE):
+    """Send random purchase proofs to proof channel every 30-60 seconds"""
     try:
         cards = ["🟦 Amazon", "🟩 Play Store", "🎟️ BookMyShow", "🛍️ Myntra", "📦 Flipkart", "🍕 Zomato", "🛒 Big Basket"]
         amounts = [500, 1000, 2000]
@@ -737,17 +773,19 @@ async def auto_proofs(context: ContextTypes.DEFAULT_TYPE):
         card = random.choice(cards)
         amount = random.choice(amounts)
         
+        message = (
+            f"*⚡ NEW PURCHASE*\n\n"
+            f"*[User] bought* {card} *₹{amount}*\n"
+            f"*at {datetime.now().strftime('%I:%M %p')}*"
+        )
+        
         await context.bot.send_message(
             chat_id=PROOF_CHANNEL,
-            text=(
-                f"*⚡ NEW PURCHASE*\n\n"
-                f"*[User] bought* {card} *₹{amount}*\n"
-                f"*at {datetime.now().strftime('%I:%M %p')}*"
-            ),
+            text=message,
             parse_mode=ParseMode.MARKDOWN
         )
     except Exception as e:
-        logger.error(f"Auto proof error: {e}")
+        logger.error(f"❌ Auto proof error: {e}")
 
 # ==================== ADMIN CALLBACK ====================
 async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -763,10 +801,14 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             amount = int(parts[2])
             utr = parts[3]
             
+            # Get current balance
             balance = get_user_balance(user_id)
             new_balance = balance + amount
+            
+            # Update balance
             update_user_balance(user_id, new_balance)
             
+            # Notify user
             try:
                 await context.bot.send_message(
                     chat_id=user_id,
@@ -782,6 +824,7 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except:
                 pass
             
+            # Update admin message
             await query.edit_message_caption(
                 caption=query.message.caption + "\n\n*✅ APPROVED BY ADMIN*",
                 parse_mode=ParseMode.MARKDOWN
@@ -791,6 +834,7 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_id = int(parts[1])
             utr = parts[2]
             
+            # Notify user
             try:
                 await context.bot.send_message(
                     chat_id=user_id,
@@ -805,12 +849,13 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except:
                 pass
             
+            # Update admin message
             await query.edit_message_caption(
                 caption=query.message.caption + "\n\n*❌ REJECTED BY ADMIN*",
                 parse_mode=ParseMode.MARKDOWN
             )
     except Exception as e:
-        logger.error(f"Admin callback error: {e}")
+        logger.error(f"❌ Admin callback error: {e}")
 
 # ==================== CANCEL ====================
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -824,14 +869,15 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ==================== ERROR HANDLER ====================
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.error(f"Update {update} caused error {context.error}")
+    logger.error(f"❌ Update {update} caused error {context.error}")
 
-# ==================== MAIN ====================
+# ==================== MAIN FUNCTION ====================
 def main():
     try:
+        # Create application
         app = Application.builder().token(BOT_TOKEN).build()
         
-        # Conversation handlers
+        # Conversation handler for UPI verification
         upi_conv = ConversationHandler(
             entry_points=[CallbackQueryHandler(verify_payment, pattern="^verify_payment$")],
             states={
@@ -843,6 +889,7 @@ def main():
             fallbacks=[CommandHandler("cancel", cancel)]
         )
         
+        # Conversation handler for amount
         amount_handler = ConversationHandler(
             entry_points=[CallbackQueryHandler(button_callback, pattern="^upi$")],
             states={
@@ -851,6 +898,7 @@ def main():
             fallbacks=[CommandHandler("cancel", cancel)]
         )
         
+        # Conversation handler for email
         email_conv = ConversationHandler(
             entry_points=[CallbackQueryHandler(button_callback, pattern="^buy_")],
             states={
@@ -869,17 +917,22 @@ def main():
         app.add_handler(CallbackQueryHandler(button_callback))
         app.add_error_handler(error_handler)
         
-        # Auto proofs
+        # Auto proofs job (every 30-60 seconds)
         job_queue = app.job_queue
         if job_queue:
             job_queue.run_repeating(auto_proofs, interval=random.randint(30, 60), first=10)
         
-        logger.info("Bot started successfully!")
-        print("🤖 Bot is running...")
+        logger.info("✅ Bot started successfully!")
+        print("🤖 Bot is running with updated channels:")
+        print(f"📢 Main Channel: {MAIN_CHANNEL}")
+        print(f"📊 Proof Channel: {PROOF_CHANNEL}")
+        print(f"👑 Admin ID: {ADMIN_ID}")
+        print("✅ Press Ctrl+C to stop")
+        
         app.run_polling(allowed_updates=Update.ALL_TYPES)
         
     except Exception as e:
-        logger.error(f"Main error: {e}")
+        logger.error(f"❌ Main error: {e}")
         print(f"❌ Bot crashed: {e}")
 
 if __name__ == "__main__":
