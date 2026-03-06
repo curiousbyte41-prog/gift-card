@@ -284,6 +284,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = query.from_user
         data = query.data
         
+        print(f"🔘 Button clicked: {data} by {user.first_name}")  # Debug log
+        
         # Handle verify button separately
         if data == "verify":
             await verify_callback(update, context)
@@ -530,6 +532,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=reply_markup
             )
         
+        # ========== PAID BUTTON ==========
+        elif data == "paid":
+            await paid_callback(update, context)
+            return
+        
         # ========== CANCEL BUTTON ==========
         elif data == "cancel_topup":
             await query.edit_message_text(
@@ -555,6 +562,34 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"❌ Callback error: {e}")
         await query.edit_message_text("⚠️ An error occurred. Please try again.")
+
+# ==================== PAID CALLBACK ====================
+async def paid_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        query = update.callback_query
+        await query.answer()
+        
+        print("💰 Paid button clicked")  # Debug log
+        
+        # Add BACK button to main menu
+        keyboard = [[InlineKeyboardButton("🔙 BACK TO MAIN MENU", callback_data="main_menu")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            f"*📤 SEND PAYMENT PROOF*\n\n"
+            f"*Please send:*\n"
+            f"1️⃣ *Your payment SCREENSHOT* (as photo)\n"
+            f"2️⃣ *Your UTR NUMBER* (in text)\n\n"
+            f"*Example UTR:* `SBIN1234567890`\n\n"
+            f"*Send both in this chat.*",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=reply_markup
+        )
+        
+        return SCREENSHOT
+    except Exception as e:
+        logger.error(f"❌ Paid callback error: {e}")
+        return ConversationHandler.END
 
 # ==================== AMOUNT HANDLER ====================
 async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -597,27 +632,47 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Try to send QR code if file exists
         try:
-            with open(QR_CODE_PATH, 'rb') as qr_file:
-                await update.message.reply_photo(
-                    photo=qr_file,
-                    caption=(
-                        f"*💳 PAYMENT DETAILS*\n\n"
-                        f"*Amount to Pay:* ₹{amount}\n"
-                        f"{fee_text}\n"
-                        f"*You will receive:* ₹{final_amount}\n\n"
-                        f"*UPI ID:* `{UPI_ID}`\n\n"
-                        f"*📱 HOW TO PAY:*\n"
-                        f"1️⃣ Scan QR code or pay to UPI ID\n"
-                        f"2️⃣ Take a SCREENSHOT of payment\n"
-                        f"3️⃣ Copy the UTR number\n"
-                        f"4️⃣ Click 'I HAVE PAID' below\n\n"
-                        f"⏳ *Auto-cancel in 10 minutes*"
-                    ),
+            if os.path.exists(QR_CODE_PATH):
+                with open(QR_CODE_PATH, 'rb') as qr_file:
+                    await update.message.reply_photo(
+                        photo=qr_file,
+                        caption=(
+                            f"*💳 PAYMENT DETAILS*\n\n"
+                            f"*Amount to Pay:* ₹{amount}\n"
+                            f"{fee_text}\n"
+                            f"*You will receive:* ₹{final_amount}\n\n"
+                            f"*UPI ID:* `{UPI_ID}`\n\n"
+                            f"*📱 HOW TO PAY:*\n"
+                            f"1️⃣ Scan QR code or pay to UPI ID\n"
+                            f"2️⃣ Take a SCREENSHOT of payment\n"
+                            f"3️⃣ Copy the UTR number\n"
+                            f"4️⃣ Click 'I HAVE PAID' below\n\n"
+                            f"⏳ *Auto-cancel in 10 minutes*"
+                        ),
+                        parse_mode=ParseMode.MARKDOWN,
+                        reply_markup=reply_markup
+                    )
+            else:
+                # If QR code not found, send without QR
+                await update.message.reply_text(
+                    f"*💳 PAYMENT DETAILS*\n\n"
+                    f"*Amount to Pay:* ₹{amount}\n"
+                    f"{fee_text}\n"
+                    f"*You will receive:* ₹{final_amount}\n\n"
+                    f"*UPI ID:* `{UPI_ID}`\n\n"
+                    f"*📱 HOW TO PAY:*\n"
+                    f"1️⃣ Open any UPI app (Google Pay, PhonePe, etc.)\n"
+                    f"2️⃣ Pay to the UPI ID above\n"
+                    f"3️⃣ Take a SCREENSHOT of payment\n"
+                    f"4️⃣ Copy the UTR number\n"
+                    f"5️⃣ Click 'I HAVE PAID' below\n\n"
+                    f"⏳ *Auto-cancel in 10 minutes*",
                     parse_mode=ParseMode.MARKDOWN,
                     reply_markup=reply_markup
                 )
-        except:
-            # If QR code not found, send without QR
+        except Exception as e:
+            logger.error(f"❌ QR code error: {e}")
+            # Fallback to text only
             await update.message.reply_text(
                 f"*💳 PAYMENT DETAILS*\n\n"
                 f"*Amount to Pay:* ₹{amount}\n"
@@ -625,11 +680,10 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"*You will receive:* ₹{final_amount}\n\n"
                 f"*UPI ID:* `{UPI_ID}`\n\n"
                 f"*📱 HOW TO PAY:*\n"
-                f"1️⃣ Open any UPI app (Google Pay, PhonePe, etc.)\n"
-                f"2️⃣ Pay to the UPI ID above\n"
-                f"3️⃣ Take a SCREENSHOT of payment\n"
-                f"4️⃣ Copy the UTR number\n"
-                f"5️⃣ Click 'I HAVE PAID' below\n\n"
+                f"1️⃣ Open any UPI app\n"
+                f"2️⃣ Pay to UPI ID above\n"
+                f"3️⃣ Send screenshot + UTR\n"
+                f"4️⃣ Click 'I HAVE PAID'\n\n"
                 f"⏳ *Auto-cancel in 10 minutes*",
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=reply_markup
@@ -647,32 +701,6 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"❌ Amount handler error: {e}")
         await update.message.reply_text("⚠️ An error occurred. Please try again.")
-        return ConversationHandler.END
-
-# ==================== PAID CALLBACK ====================
-async def paid_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        query = update.callback_query
-        await query.answer()
-        
-        # Add BACK button to main menu
-        keyboard = [[InlineKeyboardButton("🔙 BACK TO MAIN MENU", callback_data="main_menu")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await query.edit_message_text(
-            f"*📤 SEND PAYMENT PROOF*\n\n"
-            f"*Please send:*\n"
-            f"1️⃣ *Your payment SCREENSHOT* (as photo)\n"
-            f"2️⃣ *Your UTR NUMBER* (in text)\n\n"
-            f"*Example UTR:* `SBIN1234567890`\n\n"
-            f"*Send both in this chat.*",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=reply_markup
-        )
-        
-        return SCREENSHOT
-    except Exception as e:
-        logger.error(f"❌ Paid callback error: {e}")
         return ConversationHandler.END
 
 # ==================== SCREENSHOT HANDLER ====================
@@ -936,20 +964,38 @@ async def handle_support_message(update: Update, context: ContextTypes.DEFAULT_T
 async def auto_proofs(context: ContextTypes.DEFAULT_TYPE):
     """Send random purchase proofs to proof channel every 30-60 seconds"""
     try:
-        # Random names (no usernames)
-        names = ["Rahul", "Priya", "Amit", "Neha", "Vikram", "Pooja", "Raj", "Simran", "Arjun", "Kavya"]
-        cards = ["🟦 Amazon", "🟩 Play Store", "🎟️ BookMyShow", "🛍️ Myntra", "📦 Flipkart", "🍕 Zomato", "🛒 Big Basket"]
-        amounts = [500, 1000, 2000]
+        # Cool and stylish names with emojis
+        names = [
+            "👑 Raj", "💫 Arjun", "🌟 Kavya", "⚡ Veer", "🔥 Aryan",
+            "💎 Neha", "🎯 Karan", "🚀 Riya", "⭐ Amit", "💥 Priya",
+            "🦁 Simba", "🐅 Tiger", "🦅 Falcon", "🐺 Wolf", "🦊 Fox"
+        ]
+        
+        cards = [
+            "🟦 AMAZON", "🟩 PLAY STORE", "🎟️ BOOKMYSHOW", 
+            "🛍️ MYNTRA", "📦 FLIPKART", "🍕 ZOMATO", 
+            "🛒 BIG BASKET", "🎮 GOOGLE PLAY", "🎬 NETFLIX", 
+            "🎵 SPOTIFY", "💳 AMAZON PAY", "🏏 DREAM11"
+        ]
+        
+        amounts = [500, 1000, 2000, 5000]
         
         name = random.choice(names)
         card = random.choice(cards)
         amount = random.choice(amounts)
         
-        message = (
-            f"⚡ *NEW PURCHASE*\n\n"
-            f"*{name} bought* {card} *₹{amount}*\n"
-            f"*at {datetime.now().strftime('%I:%M %p')}*"
-        )
+        # Different message formats
+        formats = [
+            f"⚡ *NEW PURCHASE*\n\n✨ *{name}* just bought\n🎁 {card} *₹{amount}*\n📧 *Delivery:* Email (Instant)\n🕐 at {datetime.now().strftime('%I:%M %p')}",
+            
+            f"🎉 *FRESH ORDER*\n\n👤 *Buyer:* {name}\n💳 *Card:* {card}\n💰 *Value:* ₹{amount}\n📨 *Status:* Sent to Email\n✅ *Delivery:* Instant",
+            
+            f"🛒 *ORDER COMPLETED*\n\n━━━━━━━━━━━━━━\n👤 {name}\n🎁 {card}\n💵 ₹{amount}\n━━━━━━━━━━━━━━\n📧 *Email Delivery*\n⚡ *Instant*",
+            
+            f"⭐ *LIVE PURCHASE*\n\n🔹 *User:* {name}\n🔹 *Product:* {card}\n🔹 *Amount:* ₹{amount}\n🔹 *Time:* {datetime.now().strftime('%I:%M %p')}\n✅ *Success*"
+        ]
+        
+        message = random.choice(formats)
         
         await context.bot.send_message(
             chat_id=PROOF_CHANNEL,
@@ -1161,7 +1207,7 @@ def main():
         
         # Conversation handler for payment verification
         payment_conv = ConversationHandler(
-            entry_points=[CallbackQueryHandler(paid_callback, pattern="^paid$")],
+            entry_points=[CallbackQueryHandler(button_callback, pattern="^paid$")],
             states={
                 SCREENSHOT: [
                     MessageHandler(filters.PHOTO, handle_screenshot),
@@ -1204,6 +1250,7 @@ def main():
         if app.job_queue:
             # Send first proof after 10 seconds, then every 30-60 seconds
             app.job_queue.run_repeating(auto_proofs, interval=random.randint(30, 60), first=10)
+            print("✅ Auto proofs scheduled (every 30-60 seconds)")
         
         logger.info("✅ Bot started successfully!")
         print("╔════════════════════════════════════╗")
