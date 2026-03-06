@@ -3,15 +3,12 @@
 
 """
 ===============================================================================
-🎁 GIFT CARD & RECHARGE BOT - ULTIMATE VERSION 🎁
+🎁 GIFT CARD & RECHARGE BOT - ULTIMATE FIXED VERSION 🎁
 ===============================================================================
-All issues fixed:
-✓ Pre-defined amount buttons (10,20,30,50,120,150,200,300,400,500,1000,2000,5000,10000)
-✓ Beautiful loading animations
-✓ Gift animations throughout
-✓ Admin force promotion command
-✓ Admin force proof with custom timing
-✓ Stunning UI with gift emojis everywhere
+✓ Payment buttons now working
+✓ Admin commands hidden from users
+✓ Beautiful UI with gift animations
+✓ Force promo/proof only for admin
 ===============================================================================
 """
 
@@ -66,7 +63,7 @@ POST_INTERVAL = 7200  # 2 hours
 PROOF_INTERVAL = 45  # 45 seconds
 
 # ===========================================================================
-# PRE-DEFINED AMOUNTS BUTTONS
+# PRE-DEFINED AMOUNT BUTTONS
 # ===========================================================================
 
 AMOUNT_BUTTONS = [
@@ -377,6 +374,20 @@ async def is_member(user_id, context):
         return False
 
 # ===========================================================================
+# ADMIN DECORATOR
+# ===========================================================================
+
+def admin_only(func):
+    @wraps(func)
+    async def wrapper(update, context, *args, **kwargs):
+        user = update.effective_user
+        if user.id != ADMIN_ID:
+            await update.message.reply_text(f"{EMOJI['error']} *Unauthorized*", parse_mode=ParseMode.MARKDOWN)
+            return
+        return await func(update, context, *args, **kwargs)
+    return wrapper
+
+# ===========================================================================
 # START COMMAND
 # ===========================================================================
 
@@ -433,12 +444,12 @@ async def start(update, context):
         await update.message.reply_text(welcome, parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(keyboard))
         return
     
-    # Main menu
+    # Main menu - ONLY user commands shown
     balance = db.get_balance(user.id)
     menu = (
         f"{EMOJI['gift']}{EMOJI['gift']} *GIFT CARD & RECHARGE BOT* {EMOJI['gift']}{EMOJI['gift']}\n"
         f"{DIVIDER_GIFT}\n\n"
-        f"👤 *User:* {user.first_name} {EMOJI['crown'] if balance > 1000 else ''}\n"
+        f"👤 *User:* {user.first_name}\n"
         f"{EMOJI['money']} *Balance:* `{format_currency(balance)}`\n"
         f"{DIVIDER_SHORT}\n\n"
         f"*Select an option:* ⬇️"
@@ -454,7 +465,7 @@ async def start(update, context):
     await update.message.reply_text(menu, parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(keyboard))
 
 # ===========================================================================
-# BUTTON HANDLER
+# BUTTON HANDLER - FIXED PAYMENT BUTTONS
 # ===========================================================================
 
 async def button_handler(update, context):
@@ -625,60 +636,54 @@ async def button_handler(update, context):
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
     
-    # ===== AMOUNT BUTTON SELECTED =====
+    # ===== AMOUNT BUTTON SELECTED - FIXED WORKING VERSION =====
     elif data.startswith("amount_"):
         amount = int(data.replace("amount_", ""))
         fee, final = calculate_fee(amount)
         context.user_data['topup'] = {'amount': amount, 'fee': fee, 'final': final}
         
         keyboard = [
-            [InlineKeyboardButton(f"{EMOJI['success']} I HAVE PAID", callback_data="paid")],
-            [InlineKeyboardButton(f"{EMOJI['back']} CANCEL", callback_data="topup")]
+            [InlineKeyboardButton(f"{EMOJI['success']} ✅ I HAVE PAID", callback_data="paid")],
+            [InlineKeyboardButton(f"{EMOJI['back']} 🔙 CANCEL", callback_data="topup")]
         ]
+        
+        # Send payment details
+        payment_text = (
+            f"{EMOJI['money']} *PAYMENT DETAILS* {EMOJI['money']}\n"
+            f"{DIVIDER_GIFT}\n\n"
+            f"{EMOJI['phone']} *UPI ID:* `{UPI_ID}`\n"
+            f"{EMOJI['money']} *Amount:* `{format_currency(amount)}`\n"
+            f"{EMOJI['discount']} *Fee:* `{format_currency(fee) if fee > 0 else 'No fee'}`\n"
+            f"{EMOJI['wallet']} *You get:* `{format_currency(final)}`\n\n"
+            f"{DIVIDER_SHORT}\n\n"
+            f"{EMOJI['phone']} *How to Pay:*\n"
+            f"1️⃣ Pay to UPI ID: `{UPI_ID}`\n"
+            f"2️⃣ Take a screenshot\n"
+            f"3️⃣ Copy UTR number\n"
+            f"4️⃣ Click 'I HAVE PAID'\n\n"
+            f"⏳ *Auto-cancel in 10 minutes*"
+        )
         
         if os.path.exists(QR_CODE_PATH):
             with open(QR_CODE_PATH, 'rb') as qr:
-                await query.edit_message_media(
-                    media=InputMediaPhoto(
-                        media=qr,
-                        caption=(
-                            f"{EMOJI['money']} *PAYMENT DETAILS* {EMOJI['money']}\n"
-                            f"{DIVIDER_GIFT}\n\n"
-                            f"{EMOJI['phone']} *UPI ID:* `{UPI_ID}`\n"
-                            f"{EMOJI['money']} *Amount:* `{format_currency(amount)}`\n"
-                            f"{EMOJI['discount']} *Fee:* `{format_currency(fee) if fee > 0 else 'No fee'}`\n"
-                            f"{EMOJI['wallet']} *You get:* `{format_currency(final)}`\n\n"
-                            f"{DIVIDER_SHORT}\n\n"
-                            f"{EMOJI['phone']} *How to Pay:*\n"
-                            f"1️⃣ Scan QR code or pay to UPI ID\n"
-                            f"2️⃣ Take a screenshot\n"
-                            f"3️⃣ Copy UTR number\n"
-                            f"4️⃣ Click 'I HAVE PAID'\n\n"
-                            f"⏳ *Auto-cancel in 10 minutes*"
-                        ),
-                        parse_mode=ParseMode.MARKDOWN
-                    ),
+                await query.message.reply_photo(
+                    photo=qr,
+                    caption=payment_text,
+                    parse_mode=ParseMode.MARKDOWN,
                     reply_markup=InlineKeyboardMarkup(keyboard)
                 )
         else:
-            await query.edit_message_text(
-                f"{EMOJI['money']} *PAYMENT DETAILS* {EMOJI['money']}\n"
-                f"{DIVIDER_GIFT}\n\n"
-                f"{EMOJI['phone']} *UPI ID:* `{UPI_ID}`\n"
-                f"{EMOJI['money']} *Amount:* `{format_currency(amount)}`\n"
-                f"{EMOJI['discount']} *Fee:* `{format_currency(fee) if fee > 0 else 'No fee'}`\n"
-                f"{EMOJI['wallet']} *You get:* `{format_currency(final)}`\n\n"
-                f"{DIVIDER_SHORT}\n\n"
-                f"{EMOJI['phone']} *How to Pay:*\n"
-                f"1️⃣ Open any UPI app (GPay/PhonePe/Paytm)\n"
-                f"2️⃣ Pay to UPI ID: `{UPI_ID}`\n"
-                f"3️⃣ Take a screenshot\n"
-                f"4️⃣ Copy UTR number\n"
-                f"5️⃣ Click 'I HAVE PAID'\n\n"
-                f"⏳ *Auto-cancel in 10 minutes*",
+            await query.message.reply_text(
+                payment_text,
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
+        
+        # Also edit the original message to show it's processed
+        await query.edit_message_text(
+            f"{EMOJI['success']} *Amount Selected: ₹{amount}*\n\nPlease check the payment details above.",
+            parse_mode=ParseMode.MARKDOWN
+        )
         
         return ConversationHandler.END
     
@@ -758,78 +763,6 @@ async def button_handler(update, context):
         keyboard = [[InlineKeyboardButton(f"{EMOJI['back']} BACK", callback_data="main_menu")]]
         await query.edit_message_text(text, parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(keyboard))
         return STATE_SUPPORT
-
-# ===========================================================================
-# AMOUNT HANDLER
-# ===========================================================================
-
-async def handle_amount(update, context):
-    text = update.message.text.strip()
-    
-    try:
-        amount = int(text)
-    except ValueError:
-        await update.message.reply_text(f"{EMOJI['error']} *Invalid Input*\n\nPlease enter a valid number.", parse_mode=ParseMode.MARKDOWN)
-        return STATE_AMOUNT
-    
-    if amount < MIN_RECHARGE or amount > MAX_RECHARGE:
-        await update.message.reply_text(
-            f"{EMOJI['error']} *Invalid Amount*\n\nAmount must be between `{format_currency(MIN_RECHARGE)}` and `{format_currency(MAX_RECHARGE)}`.",
-            parse_mode=ParseMode.MARKDOWN
-        )
-        return STATE_AMOUNT
-    
-    fee, final = calculate_fee(amount)
-    context.user_data['topup'] = {'amount': amount, 'fee': fee, 'final': final}
-    
-    keyboard = [
-        [InlineKeyboardButton(f"{EMOJI['success']} I HAVE PAID", callback_data="paid")],
-        [InlineKeyboardButton(f"{EMOJI['back']} CANCEL", callback_data="topup")]
-    ]
-    
-    if os.path.exists(QR_CODE_PATH):
-        with open(QR_CODE_PATH, 'rb') as qr:
-            await update.message.reply_photo(
-                photo=qr,
-                caption=(
-                    f"{EMOJI['money']} *PAYMENT DETAILS* {EMOJI['money']}\n"
-                    f"{DIVIDER_GIFT}\n\n"
-                    f"{EMOJI['phone']} *UPI ID:* `{UPI_ID}`\n"
-                    f"{EMOJI['money']} *Amount:* `{format_currency(amount)}`\n"
-                    f"{EMOJI['discount']} *Fee:* `{format_currency(fee) if fee > 0 else 'No fee'}`\n"
-                    f"{EMOJI['wallet']} *You get:* `{format_currency(final)}`\n\n"
-                    f"{DIVIDER_SHORT}\n\n"
-                    f"{EMOJI['phone']} *How to Pay:*\n"
-                    f"1️⃣ Scan QR code or pay to UPI ID\n"
-                    f"2️⃣ Take a screenshot\n"
-                    f"3️⃣ Copy UTR number\n"
-                    f"4️⃣ Click 'I HAVE PAID'\n\n"
-                    f"⏳ *Auto-cancel in 10 minutes*"
-                ),
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=InlineKeyboardMarkup(keyboard)
-            )
-    else:
-        await update.message.reply_text(
-            f"{EMOJI['money']} *PAYMENT DETAILS* {EMOJI['money']}\n"
-            f"{DIVIDER_GIFT}\n\n"
-            f"{EMOJI['phone']} *UPI ID:* `{UPI_ID}`\n"
-            f"{EMOJI['money']} *Amount:* `{format_currency(amount)}`\n"
-            f"{EMOJI['discount']} *Fee:* `{format_currency(fee) if fee > 0 else 'No fee'}`\n"
-            f"{EMOJI['wallet']} *You get:* `{format_currency(final)}`\n\n"
-            f"{DIVIDER_SHORT}\n\n"
-            f"{EMOJI['phone']} *How to Pay:*\n"
-            f"1️⃣ Open any UPI app (GPay/PhonePe/Paytm)\n"
-            f"2️⃣ Pay to UPI ID: `{UPI_ID}`\n"
-            f"3️⃣ Take a screenshot\n"
-            f"4️⃣ Copy UTR number\n"
-            f"5️⃣ Click 'I HAVE PAID'\n\n"
-            f"⏳ *Auto-cancel in 10 minutes*",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-    
-    return ConversationHandler.END
 
 # ===========================================================================
 # PAID HANDLER
@@ -1018,14 +951,11 @@ async def admin_handler(update, context):
         await query.edit_message_caption(caption=query.message.caption + f"\n\n❌ *REJECTED BY ADMIN*", parse_mode=ParseMode.MARKDOWN)
 
 # ===========================================================================
-# ADMIN COMMANDS
+# ADMIN COMMANDS - HIDDEN FROM USERS
 # ===========================================================================
 
+@admin_only
 async def admin_stats(update, context):
-    if update.effective_user.id != ADMIN_ID:
-        await update.message.reply_text(f"{EMOJI['error']} Unauthorized")
-        return
-    
     conn = sqlite3.connect(DATABASE_PATH)
     c = conn.cursor()
     c.execute("SELECT COUNT(*) FROM users"); users = c.fetchone()[0]
@@ -1043,22 +973,14 @@ async def admin_stats(update, context):
         parse_mode=ParseMode.MARKDOWN
     )
 
+@admin_only
 async def admin_force_promo(update, context):
-    """Admin command to force a promotion post"""
-    if update.effective_user.id != ADMIN_ID:
-        await update.message.reply_text(f"{EMOJI['error']} Unauthorized")
-        return
-    
     await show_loading(update, "Creating Promotion", 2)
     await auto_promotions(context)
     await update.message.reply_text(f"{EMOJI['success']} *Promotion Posted!*", parse_mode=ParseMode.MARKDOWN)
 
+@admin_only
 async def admin_force_proof(update, context):
-    """Admin command to force a proof post with custom interval"""
-    if update.effective_user.id != ADMIN_ID:
-        await update.message.reply_text(f"{EMOJI['error']} Unauthorized")
-        return
-    
     await update.message.reply_text(
         f"{EMOJI['proof']} *FORCE PROOF*\n\n"
         f"Enter amount in ₹ (e.g., 500, 1000, 2000):",
@@ -1066,11 +988,8 @@ async def admin_force_proof(update, context):
     )
     return STATE_FORCE_PROOF_AMOUNT
 
+@admin_only
 async def handle_force_proof_amount(update, context):
-    """Handle amount for force proof"""
-    if update.effective_user.id != ADMIN_ID:
-        return ConversationHandler.END
-    
     try:
         amount = int(update.message.text.strip())
         context.user_data['force_proof_amount'] = amount
@@ -1086,11 +1005,8 @@ async def handle_force_proof_amount(update, context):
     )
     return STATE_FORCE_PROOF_INTERVAL
 
+@admin_only
 async def handle_force_proof_interval(update, context):
-    """Handle interval for force proof and start posting"""
-    if update.effective_user.id != ADMIN_ID:
-        return ConversationHandler.END
-    
     try:
         interval = int(update.message.text.strip())
         amount = context.user_data.get('force_proof_amount', 500)
@@ -1100,15 +1016,11 @@ async def handle_force_proof_interval(update, context):
     
     context.user_data.clear()
     
-    # Start a job for force proofs
     job_name = f"force_proof_{update.effective_user.id}"
-    
-    # Remove existing job if any
     current_jobs = context.job_queue.get_jobs_by_name(job_name)
     for job in current_jobs:
         job.schedule_removal()
     
-    # Add new job
     context.job_queue.run_repeating(
         force_proof_callback,
         interval=interval,
@@ -1122,12 +1034,24 @@ async def handle_force_proof_interval(update, context):
         f"Amount: ₹{amount}\n"
         f"Interval: {interval} seconds\n"
         f"Channel: {PROOF_CHANNEL}\n\n"
-        f"Use /stop_force_proof to stop.",
+        f"Use /stopforceproof to stop.",
+        parse_mode=ParseMode.MARKDOWN
+    )
+
+@admin_only
+async def admin_stop_force_proof(update, context):
+    job_name = f"force_proof_{update.effective_user.id}"
+    current_jobs = context.job_queue.get_jobs_by_name(job_name)
+    
+    for job in current_jobs:
+        job.schedule_removal()
+    
+    await update.message.reply_text(
+        f"{EMOJI['success']} *Force Proof Stopped!*",
         parse_mode=ParseMode.MARKDOWN
     )
 
 async def force_proof_callback(context):
-    """Callback for force proof job"""
     job = context.job
     amount = job.data['amount']
     
@@ -1158,29 +1082,11 @@ async def force_proof_callback(context):
     except Exception as e:
         logger.error(f"❌ Force proof error: {e}")
 
-async def admin_stop_force_proof(update, context):
-    """Stop force proof job"""
-    if update.effective_user.id != ADMIN_ID:
-        await update.message.reply_text(f"{EMOJI['error']} Unauthorized")
-        return
-    
-    job_name = f"force_proof_{update.effective_user.id}"
-    current_jobs = context.job_queue.get_jobs_by_name(job_name)
-    
-    for job in current_jobs:
-        job.schedule_removal()
-    
-    await update.message.reply_text(
-        f"{EMOJI['success']} *Force Proof Stopped!*",
-        parse_mode=ParseMode.MARKDOWN
-    )
-
 # ===========================================================================
 # AUTO PROMOTIONS
 # ===========================================================================
 
 async def auto_promotions(context):
-    """Auto post promotions to main channel"""
     try:
         promos = [
             {
@@ -1266,7 +1172,6 @@ async def auto_promotions(context):
 # ===========================================================================
 
 async def auto_proofs(context):
-    """Send random proofs to proof channel"""
     try:
         names = ["👑 Raj", "💫 Arjun", "🌟 Kavya", "⚡ Veer", "🔥 Aryan"]
         cards = ["🟦 AMAZON", "🟩 PLAY STORE", "🎟️ BOOKMYSHOW", "🛍️ MYNTRA", "📦 FLIPKART", "🍕 ZOMATO"]
@@ -1313,19 +1218,17 @@ async def error_handler(update, context):
     logger.error(f"❌ Error: {context.error}")
 
 # ===========================================================================
-# POST INIT
+# POST INIT - ONLY USER COMMANDS VISIBLE
 # ===========================================================================
 
 async def post_init(app):
+    # Set bot commands - only show user commands, hide admin ones
     await app.bot.set_my_commands([
-        BotCommand("start", "🚀 Start"),
-        BotCommand("stats", "📊 Stats (Admin)"),
-        BotCommand("forcepromo", "📢 Force Promotion (Admin)"),
-        BotCommand("forceproof", "📊 Force Proof (Admin)"),
-        BotCommand("stopforceproof", "🛑 Stop Force Proof (Admin)"),
-        BotCommand("cancel", "❌ Cancel")
+        BotCommand("start", "🚀 Start the bot"),
+        BotCommand("cancel", "❌ Cancel current operation")
     ])
     
+    # Verify channels
     try:
         await app.bot.get_chat(MAIN_CHANNEL)
         logger.info(f"✅ Main channel verified: {MAIN_CHANNEL}")
@@ -1351,14 +1254,16 @@ def main():
     
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
     
-    # Command handlers
+    # User command handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("cancel", cancel))
+    
+    # Admin command handlers (hidden from users)
     app.add_handler(CommandHandler("stats", admin_stats))
     app.add_handler(CommandHandler("forcepromo", admin_force_promo))
     app.add_handler(CommandHandler("stopforceproof", admin_stop_force_proof))
     
-    # Force proof conversation
+    # Force proof conversation (admin only)
     force_proof_conv = ConversationHandler(
         entry_points=[CommandHandler("forceproof", admin_force_proof)],
         states={
@@ -1373,14 +1278,6 @@ def main():
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(CallbackQueryHandler(admin_handler, pattern="^(approve_|reject_)"))
     app.add_handler(CallbackQueryHandler(handle_paid, pattern="^paid$"))
-    
-    # Amount conversation
-    amount_conv = ConversationHandler(
-        entry_points=[MessageHandler(filters.TEXT & ~filters.COMMAND, handle_amount)],
-        states={STATE_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_amount)]},
-        fallbacks=[CommandHandler("cancel", cancel)]
-    )
-    app.add_handler(amount_conv)
     
     # Payment verification conversation
     payment_conv = ConversationHandler(
@@ -1429,7 +1326,7 @@ def main():
     print(f"📊 Proof Channel: {PROOF_CHANNEL}")
     print(f"💰 Referral Bonus: ₹{REFERRAL_BONUS}")
     print(f"📅 Promotions: {POSTS_PER_DAY} posts/day")
-    print(f"🛡️ Force Proof: Available")
+    print(f"🛡️ Force Proof: Available (Admin only)")
     print("="*70 + "\n")
     
     app.run_polling()
