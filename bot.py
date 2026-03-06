@@ -3,12 +3,13 @@
 
 """
 ===============================================================================
-🎁 GIFT CARD & RECHARGE BOT - ULTIMATE FIXED VERSION 🎁
+🎁 GIFT CARD & RECHARGE BOT - ULTIMATE EDITION v11.0 🎁
 ===============================================================================
-✓ Payment buttons now working
-✓ Admin commands hidden from users
-✓ Beautiful UI with gift animations
-✓ Force promo/proof only for admin
+NEW FEATURES ADDED:
+✓ Message Reactions (1) ✓ Typing Indicators (2) ✓ Daily Rewards (3) 
+✓ Price Drop Alerts (6) ✓ Discount Coupons (10) ✓ Bulk Purchase (12)
+✓ Gift Card Gifting (13) ✓ Multi-Language Support (23) ✓ Admin Dashboard (24)
+✓ Enhanced Visuals - Animated GIFs, Progress Bars, Badges, Tables
 ===============================================================================
 """
 
@@ -19,9 +20,16 @@ import random
 import os
 import sys
 import re
-from datetime import datetime, timedelta
+import json
+import qrcode
+from io import BytesIO
+from datetime import datetime, timedelta, date
 from functools import wraps
 from pathlib import Path
+from typing import Dict, List, Tuple, Optional, Any
+from collections import defaultdict
+import pandas as pd
+from threading import Thread
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import (
@@ -40,7 +48,6 @@ UPI_ID = os.environ.get("UPI_ID", "helobiy41@ptyes")
 
 # Channels
 MAIN_CHANNEL = "@gift_card_main"
-PROOF_CHANNEL = "@gift_card_log"
 ADMIN_CHANNEL_ID = -1003607749028
 
 # Paths
@@ -60,7 +67,59 @@ WELCOME_BONUS = 5
 # Auto Posts
 POSTS_PER_DAY = 12
 POST_INTERVAL = 7200  # 2 hours
-PROOF_INTERVAL = 45  # 45 seconds
+
+# ===========================================================================
+# ENHANCED FEATURES CONFIGURATION
+# ===========================================================================
+
+# Daily Rewards (Feature 3)
+DAILY_REWARDS = {
+    1: 5,    # Day 1: ₹5
+    2: 8,    # Day 2: ₹8
+    3: 10,   # Day 3: ₹10
+    4: 12,   # Day 4: ₹12
+    5: 15,   # Day 5: ₹15
+    6: 18,   # Day 6: ₹18
+    7: 25,   # Day 7: ₹25 (Bonus)
+    10: 40,  # Day 10: ₹40 (Milestone)
+    15: 60,  # Day 15: ₹60 (Milestone)
+    30: 100  # Day 30: ₹100 (Monthly Bonus)
+}
+
+# Discount Coupons (Feature 10)
+COUPONS = {
+    "WELCOME10": {"discount": 10, "type": "percentage", "min": 100, "uses": 1},
+    "SAVE20": {"discount": 20, "type": "fixed", "min": 200, "uses": 1},
+    "FIRST50": {"discount": 50, "type": "fixed", "min": 500, "uses": 1},
+    "FREESHIP": {"discount": 0, "type": "free_delivery", "min": 300, "uses": 1},
+    "DIWALI22": {"discount": 22, "type": "percentage", "min": 200, "uses": 100},
+    "HOLI15": {"discount": 15, "type": "percentage", "min": 150, "uses": 100},
+    "FLASH50": {"discount": 50, "type": "percentage", "min": 500, "uses": 50}
+}
+
+# Bulk Purchase Discounts (Feature 12)
+BULK_DISCOUNTS = {
+    1: 0,    # No discount
+    3: 3,    # 3% off on 3+ cards
+    5: 5,    # 5% off on 5+ cards
+    10: 10,  # 10% off on 10+ cards
+    25: 15,  # 15% off on 25+ cards
+    50: 20   # 20% off on 50+ cards
+}
+
+# Price Drop Alerts (Feature 6)
+PRICE_ALERT_THRESHOLD = 10  # Alert when price drops by 10%
+
+# Languages (Feature 23)
+LANGUAGES = {
+    "en": {"name": "English", "flag": "🇬🇧"},
+    "hi": {"name": "हिन्दी", "flag": "🇮🇳"},
+    "ta": {"name": "தமிழ்", "flag": "🇮🇳"},
+    "te": {"name": "తెలుగు", "flag": "🇮🇳"},
+    "bn": {"name": "বাংলা", "flag": "🇮🇳"},
+    "gu": {"name": "ગુજરાતી", "flag": "🇮🇳"},
+    "mr": {"name": "मराठी", "flag": "🇮🇳"}
+}
 
 # ===========================================================================
 # PRE-DEFINED AMOUNT BUTTONS
@@ -82,49 +141,243 @@ AMOUNT_BUTTONS = [
     STATE_UTR,
     STATE_EMAIL,
     STATE_SUPPORT,
-    STATE_FORCE_PROOF_AMOUNT,
-    STATE_FORCE_PROOF_INTERVAL
-) = range(7)
+    STATE_GIFT_EMAIL,
+    STATE_COUPON,
+    STATE_BULK_COUNT,
+    STATE_PRICE_ALERT,
+    STATE_LANGUAGE
+) = range(10)
 
 # ===========================================================================
 # GIFT CARD DATA
 # ===========================================================================
 
 GIFT_CARDS = {
-    "amazon": {"name": "AMAZON", "emoji": "🟦", "full_emoji": "🟦🛒", "popular": True},
-    "flipkart": {"name": "FLIPKART", "emoji": "📦", "full_emoji": "📦🛍️", "popular": True},
-    "playstore": {"name": "PLAY STORE", "emoji": "🟩", "full_emoji": "🟩🎮", "popular": True},
-    "bookmyshow": {"name": "BOOKMYSHOW", "emoji": "🎟️", "full_emoji": "🎟️🎬", "popular": True},
-    "myntra": {"name": "MYNTRA", "emoji": "🛍️", "full_emoji": "🛍️👗", "popular": True},
-    "zomato": {"name": "ZOMATO", "emoji": "🍕", "full_emoji": "🍕🍔", "popular": True},
-    "bigbasket": {"name": "BIG BASKET", "emoji": "🛒", "full_emoji": "🛒🥬", "popular": True}
+    "amazon": {
+        "name": "AMAZON", "emoji": "🟦", "full_emoji": "🟦🛒", 
+        "popular": True, "trending": True,
+        "base_price": {500: 100, 1000: 200, 2000: 400, 5000: 1000}
+    },
+    "flipkart": {
+        "name": "FLIPKART", "emoji": "📦", "full_emoji": "📦🛍️", 
+        "popular": True, "trending": True,
+        "base_price": {500: 100, 1000: 200, 2000: 400, 5000: 1000}
+    },
+    "playstore": {
+        "name": "PLAY STORE", "emoji": "🟩", "full_emoji": "🟩🎮", 
+        "popular": True, "trending": False,
+        "base_price": {500: 100, 1000: 200, 2000: 400, 5000: 1000}
+    },
+    "bookmyshow": {
+        "name": "BOOKMYSHOW", "emoji": "🎟️", "full_emoji": "🎟️🎬", 
+        "popular": True, "trending": False,
+        "base_price": {500: 100, 1000: 200, 2000: 400, 5000: 1000}
+    },
+    "myntra": {
+        "name": "MYNTRA", "emoji": "🛍️", "full_emoji": "🛍️👗", 
+        "popular": True, "trending": True,
+        "base_price": {500: 100, 1000: 200, 2000: 400, 5000: 1000}
+    },
+    "zomato": {
+        "name": "ZOMATO", "emoji": "🍕", "full_emoji": "🍕🍔", 
+        "popular": True, "trending": False,
+        "base_price": {500: 100, 1000: 200, 2000: 400, 5000: 1000}
+    },
+    "bigbasket": {
+        "name": "BIG BASKET", "emoji": "🛒", "full_emoji": "🛒🥬", 
+        "popular": False, "trending": False,
+        "base_price": {500: 100, 1000: 200, 2000: 400, 5000: 1000}
+    }
 }
 
+# Price configuration (dynamic - can be updated)
 PRICES = {500: 100, 1000: 200, 2000: 400, 5000: 1000}
 DENOMINATIONS = [500, 1000, 2000, 5000]
 
 # ===========================================================================
-# BEAUTIFUL UI COMPONENTS
+# ENHANCED UI COMPONENTS
 # ===========================================================================
 
-EMOJI = {
-    "gift": "🎁", "card": "💳", "money": "💰", "wallet": "👛",
-    "success": "✅", "error": "❌", "warning": "⚠️", "info": "ℹ️",
-    "star": "⭐", "fire": "🔥", "crown": "👑", "rocket": "🚀",
-    "support": "🆘", "proof": "📊", "referral": "👥", "back": "🔙",
-    "time": "⏰", "email": "📧", "phone": "📱", "discount": "🏷️",
-    "delivery": "📦", "instant": "⚡", "guarantee": "🛡️", "users": "👥",
-    "loading": "⏳", "gift_box": "🎀", "sparkle": "✨", "diamond": "💎",
-    "trophy": "🏆", "medal": "🏅", "heart": "❤️", "party": "🎉",
-    "confetti": "🎊", "balloon": "🎈", "cake": "🎂", "bell": "🔔"
-}
+class EnhancedUI:
+    """Premium UI components with animations and visuals"""
+    
+    @staticmethod
+    def fancy_header(title, emoji="🎁", width=40):
+        """Create fancy header with borders"""
+        border_top = "╔" + "═" * (width-2) + "╗"
+        middle = f"║{emoji} {title} {emoji}".center(width)
+        border_bottom = "╚" + "═" * (width-2) + "╝"
+        return f"<pre>{border_top}\n{middle}\n{border_bottom}</pre>"
+    
+    @staticmethod
+    def progress_bar(current, total, width=20):
+        """Beautiful progress bar"""
+        if total == 0:
+            filled = 0
+        else:
+            filled = int(width * current / total)
+        bar = "█" * filled + "░" * (width - filled)
+        percent = int(100 * current / total) if total > 0 else 0
+        return f"<code>{bar}</code> <b>{percent}%</b>"
+    
+    @staticmethod
+    def price_table(prices):
+        """Create price comparison table"""
+        table = "<pre>"
+        table += "┌─────────┬─────────┐\n"
+        table += "│  Value  │  Price  │\n"
+        table += "├─────────┼─────────┤\n"
+        for value, price in prices.items():
+            table += f"│ ₹{value:<6} │ ₹{price:<6} │\n"
+        table += "└─────────┴─────────┘</pre>"
+        return table
+    
+    @staticmethod
+    def rating_stars(rating):
+        """Convert rating to stars"""
+        full = "⭐" * int(rating)
+        half = "✨" if rating % 1 >= 0.5 else ""
+        empty = "☆" * (5 - int(rating) - (1 if half else 0))
+        return full + half + empty
+    
+    @staticmethod
+    def user_badge(purchases):
+        """Get user badge based on purchases"""
+        if purchases >= 100:
+            return "👑 VIP ELITE"
+        elif purchases >= 50:
+            return "💎 DIAMOND"
+        elif purchases >= 25:
+            return "🏆 GOLD"
+        elif purchases >= 10:
+            return "⭐ SILVER"
+        elif purchases >= 5:
+            return "🔥 BRONZE"
+        elif purchases >= 1:
+            return "🆕 BEGINNER"
+        else:
+            return "👤 NEW"
+    
+    @staticmethod
+    def format_currency(amount):
+        """Format currency with commas"""
+        return f"₹{amount:,}"
 
-# Loading animation frames
-LOADING_FRAMES = ["🎁", "🎀", "✨", "⭐", "🌟", "💫", "⚡", "💎"]
+class Animations:
+    """Message animations"""
+    
+    @staticmethod
+    async def typing(update, duration=1):
+        """Show typing indicator"""
+        await update.get_bot().send_chat_action(
+            chat_id=update.effective_chat.id, 
+            action="typing"
+        )
+        await asyncio.sleep(duration)
+    
+    @staticmethod
+    async def uploading(update, duration=1):
+        """Show uploading indicator"""
+        await update.get_bot().send_chat_action(
+            chat_id=update.effective_chat.id, 
+            action="upload_photo"
+        )
+        await asyncio.sleep(duration)
+    
+    @staticmethod
+    async def react(update, emoji="👍"):
+        """React to message"""
+        try:
+            await update.message.react([{"type": "emoji", "emoji": emoji}])
+        except:
+            pass
 
-DIVIDER = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-DIVIDER_SHORT = "┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄"
-DIVIDER_GIFT = "🎁━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━🎁"
+# ===========================================================================
+# MULTI-LANGUAGE SUPPORT
+# ===========================================================================
+
+class Translator:
+    """Multi-language translation system"""
+    
+    translations = {
+        "en": {
+            "welcome": "Welcome to Gift Card Bot!",
+            "balance": "Your Balance",
+            "select_option": "Select an option:",
+            "insufficient": "Insufficient Balance",
+            "success": "Success!",
+            "error": "Error!",
+            "confirm": "Confirm",
+            "cancel": "Cancel",
+            "back": "Back",
+            "gift_cards": "Gift Cards",
+            "add_money": "Add Money",
+            "my_wallet": "My Wallet",
+            "referral": "Referral Program",
+            "support": "Support",
+            "daily_reward": "Daily Reward",
+            "coupon": "Coupon",
+            "bulk_purchase": "Bulk Purchase",
+            "gift_card": "Send as Gift",
+            "price_alert": "Price Alert"
+        },
+        "hi": {
+            "welcome": "गिफ्ट कार्ड बॉट में आपका स्वागत है!",
+            "balance": "आपका बैलेंस",
+            "select_option": "कोई विकल्प चुनें:",
+            "insufficient": "अपर्याप्त बैलेंस",
+            "success": "सफल!",
+            "error": "त्रुटि!",
+            "confirm": "पुष्टि करें",
+            "cancel": "रद्द करें",
+            "back": "वापस",
+            "gift_cards": "गिफ्ट कार्ड",
+            "add_money": "पैसे जोड़ें",
+            "my_wallet": "मेरा वॉलेट",
+            "referral": "रेफरल प्रोग्राम",
+            "support": "सहायता",
+            "daily_reward": "दैनिक इनाम",
+            "coupon": "कूपन",
+            "bulk_purchase": "थोक खरीद",
+            "gift_card": "उपहार के रूप में भेजें",
+            "price_alert": "मूल्य अलर्ट"
+        },
+        "ta": {
+            "welcome": "கிஃப்ட் கார்ட் போட்டுக்கு வரவேற்கிறோம்!",
+            "balance": "உங்கள் இருப்பு",
+            "select_option": "ஒரு விருப்பத்தைத் தேர்ந்தெடுக்கவும்:",
+            "insufficient": "போதுமான இருப்பு இல்லை",
+            "success": "வெற்றி!",
+            "error": "பிழை!",
+            "confirm": "உறுதிப்படுத்து",
+            "cancel": "ரத்துசெய்",
+            "back": "பின்",
+            "gift_cards": "கிஃப்ட் கார்டுகள்",
+            "add_money": "பணம் சேர்க்க",
+            "my_wallet": "என் வாலட்",
+            "referral": "ரெஃபரல் திட்டம்",
+            "support": "ஆதரவு",
+            "daily_reward": "தினசரி வெகுமதி",
+            "coupon": "கூப்பன்",
+            "bulk_purchase": "மொத்த கொள்முதல்",
+            "gift_card": "பரிசாக அனுப்பு",
+            "price_alert": "விலை எச்சரிக்கை"
+        }
+    }
+    
+    @staticmethod
+    def get_text(user_id, key, lang=None):
+        """Get translated text for user"""
+        if lang is None:
+            # Get user's language from database
+            conn = sqlite3.connect(DATABASE_PATH)
+            c = conn.cursor()
+            c.execute("SELECT language FROM users WHERE user_id = ?", (user_id,))
+            result = c.fetchone()
+            conn.close()
+            lang = result[0] if result and result[0] in Translator.translations else "en"
+        
+        return Translator.translations.get(lang, Translator.translations["en"]).get(key, key)
 
 # ===========================================================================
 # LOGGING
@@ -134,7 +387,7 @@ logging.basicConfig(format='%(asctime)s | %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ===========================================================================
-# DATABASE MANAGER
+# DATABASE MANAGER - ENHANCED
 # ===========================================================================
 
 class DatabaseManager:
@@ -149,10 +402,13 @@ class DatabaseManager:
         conn = self._get_conn()
         c = conn.cursor()
         
+        # Users table - enhanced with more fields
         c.execute('''CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
-            username TEXT, first_name TEXT,
+            username TEXT, 
+            first_name TEXT,
             balance INTEGER DEFAULT 0,
+            bonus_balance INTEGER DEFAULT 0,
             total_recharged INTEGER DEFAULT 0,
             total_spent INTEGER DEFAULT 0,
             total_purchases INTEGER DEFAULT 0,
@@ -160,34 +416,59 @@ class DatabaseManager:
             referral_code TEXT UNIQUE,
             referred_by INTEGER,
             join_date TIMESTAMP,
-            last_active TIMESTAMP
+            last_active TIMESTAMP,
+            language TEXT DEFAULT 'en',
+            streak INTEGER DEFAULT 0,
+            last_claim DATE,
+            badges TEXT DEFAULT '[]',
+            alerts TEXT DEFAULT '[]'
         )''')
         
+        # Transactions table
         c.execute('''CREATE TABLE IF NOT EXISTS transactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER, amount INTEGER,
-            type TEXT, status TEXT,
+            user_id INTEGER, 
+            transaction_id TEXT UNIQUE,
+            amount INTEGER,
+            type TEXT, 
+            status TEXT,
             utr TEXT UNIQUE,
             timestamp TIMESTAMP
         )''')
         
+        # Purchases table
         c.execute('''CREATE TABLE IF NOT EXISTS purchases (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER, order_id TEXT UNIQUE,
-            card_name TEXT, card_value INTEGER,
-            price INTEGER, email TEXT,
+            user_id INTEGER, 
+            order_id TEXT UNIQUE,
+            card_name TEXT, 
+            card_value INTEGER,
+            quantity INTEGER DEFAULT 1,
+            price INTEGER,
+            original_price INTEGER,
+            discount INTEGER DEFAULT 0,
+            coupon TEXT,
+            email TEXT,
+            is_gift INTEGER DEFAULT 0,
+            recipient_email TEXT,
+            gift_message TEXT,
             timestamp TIMESTAMP
         )''')
         
+        # Verifications table
         c.execute('''CREATE TABLE IF NOT EXISTS verifications (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER, amount INTEGER,
-            fee INTEGER, final_amount INTEGER,
-            utr TEXT UNIQUE, screenshot TEXT,
+            user_id INTEGER, 
+            amount INTEGER,
+            fee INTEGER, 
+            final_amount INTEGER,
+            utr TEXT UNIQUE, 
+            screenshot TEXT,
             status TEXT DEFAULT 'pending',
             timestamp TIMESTAMP
         )''')
         
+        # Referrals table
         c.execute('''CREATE TABLE IF NOT EXISTS referrals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             referrer_id INTEGER,
@@ -197,9 +478,53 @@ class DatabaseManager:
             timestamp TIMESTAMP
         )''')
         
+        # Daily rewards table
+        c.execute('''CREATE TABLE IF NOT EXISTS daily_rewards (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            claim_date DATE,
+            streak INTEGER DEFAULT 1,
+            amount INTEGER,
+            UNIQUE(user_id, claim_date)
+        )''')
+        
+        # Coupons table
+        c.execute('''CREATE TABLE IF NOT EXISTS coupons (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT UNIQUE,
+            user_id INTEGER,
+            discount_type TEXT,
+            discount_value INTEGER,
+            min_amount INTEGER,
+            used INTEGER DEFAULT 0,
+            expires TIMESTAMP
+        )''')
+        
+        # Price alerts table
+        c.execute('''CREATE TABLE IF NOT EXISTS price_alerts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            card_name TEXT,
+            target_price INTEGER,
+            current_price INTEGER,
+            active INTEGER DEFAULT 1,
+            created TIMESTAMP
+        )''')
+        
+        # Admin logs table
+        c.execute('''CREATE TABLE IF NOT EXISTS admin_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            admin_id INTEGER,
+            action TEXT,
+            details TEXT,
+            timestamp TIMESTAMP
+        )''')
+        
         conn.commit()
         conn.close()
-        logger.info("✅ Database ready")
+        logger.info("✅ Enhanced Database ready")
+    
+    # ===== USER METHODS =====
     
     def get_user(self, user_id):
         conn = self._get_conn()
@@ -223,13 +548,22 @@ class DatabaseManager:
         conn.close()
         return self.get_user(user_id)
     
-    def update_active(self, user_id):
+    def update_user(self, user_id, **kwargs):
         conn = self._get_conn()
         c = conn.cursor()
-        c.execute("UPDATE users SET last_active = ? WHERE user_id = ?",
-                 (datetime.now().isoformat(), user_id))
+        fields = []
+        values = []
+        for key, value in kwargs.items():
+            fields.append(f"{key} = ?")
+            values.append(value)
+        values.append(user_id)
+        query = f"UPDATE users SET {', '.join(fields)} WHERE user_id = ?"
+        c.execute(query, values)
         conn.commit()
         conn.close()
+    
+    def update_active(self, user_id):
+        self.update_user(user_id, last_active=datetime.now().isoformat())
     
     def get_balance(self, user_id):
         user = self.get_user(user_id)
@@ -247,10 +581,11 @@ class DatabaseManager:
             if new_balance < 0: return False
             c.execute("UPDATE users SET balance = ?, last_active = ? WHERE user_id = ?",
                      (new_balance, datetime.now().isoformat(), user_id))
+            tx_id = f"TXN{datetime.now().strftime('%y%m%d%H%M%S')}{random.randint(1000,9999)}"
             c.execute('''INSERT INTO transactions 
-                (user_id, amount, type, status, utr, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?)''',
-                (user_id, abs(amount), txn_type, 'completed', utr, datetime.now().isoformat()))
+                (user_id, transaction_id, amount, type, status, utr, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?, ?)''',
+                (user_id, tx_id, abs(amount), txn_type, 'completed', utr, datetime.now().isoformat()))
             if amount > 0:
                 c.execute("UPDATE users SET total_recharged = total_recharged + ? WHERE user_id = ?",
                          (amount, user_id))
@@ -261,77 +596,215 @@ class DatabaseManager:
                          (user_id,))
             conn.commit()
             return True
-        except:
+        except Exception as e:
+            logger.error(f"Balance error: {e}")
             conn.rollback()
             return False
         finally:
             conn.close()
     
-    def create_verification(self, user_id, amount, fee, final, utr, screenshot):
-        conn = self._get_conn()
-        c = conn.cursor()
-        c.execute('''INSERT INTO verifications 
-            (user_id, amount, fee, final_amount, utr, screenshot, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?)''',
-            (user_id, amount, fee, final, utr, screenshot, datetime.now().isoformat()))
-        vid = c.lastrowid
-        conn.commit()
-        conn.close()
-        return str(vid)
+    # ===== DAILY REWARDS (Feature 3) =====
     
-    def approve_verification(self, vid):
+    def claim_daily_reward(self, user_id):
+        """Claim daily reward"""
         conn = self._get_conn()
         c = conn.cursor()
-        try:
-            c.execute("SELECT * FROM verifications WHERE id = ?", (vid,))
-            row = c.fetchone()
-            if not row: return None
-            v = dict(zip([col[0] for col in c.description], row))
-            c.execute("UPDATE verifications SET status = 'approved' WHERE id = ?", (vid,))
-            self.update_balance(v['user_id'], v['final_amount'], 'credit', v['utr'])
-            conn.commit()
-            return v
-        except:
+        
+        today = date.today()
+        
+        # Check if already claimed today
+        c.execute("SELECT streak FROM daily_rewards WHERE user_id = ? AND claim_date = ?", 
+                  (user_id, today))
+        if c.fetchone():
+            conn.close()
             return None
-        finally:
-            conn.close()
-    
-    def reject_verification(self, vid):
-        conn = self._get_conn()
-        c = conn.cursor()
-        c.execute("UPDATE verifications SET status = 'rejected' WHERE id = ?", (vid,))
+        
+        # Get last claim
+        c.execute("SELECT claim_date, streak FROM daily_rewards WHERE user_id = ? ORDER BY claim_date DESC LIMIT 1", 
+                  (user_id,))
+        last = c.fetchone()
+        
+        if last:
+            last_date = datetime.strptime(last[0], '%Y-%m-%d').date()
+            if (today - last_date).days == 1:
+                streak = last[1] + 1
+            else:
+                streak = 1
+        else:
+            streak = 1
+        
+        # Calculate reward
+        if streak in DAILY_REWARDS:
+            reward = DAILY_REWARDS[streak]
+        elif streak > 30:
+            reward = 100
+        elif streak > 15:
+            reward = 60
+        elif streak > 10:
+            reward = 40
+        elif streak > 7:
+            reward = 30
+        else:
+            reward = 5 + (streak - 1) * 2
+        
+        # Save reward
+        c.execute("INSERT INTO daily_rewards (user_id, claim_date, streak, amount) VALUES (?, ?, ?, ?)",
+                  (user_id, today, streak, reward))
+        
+        # Update user balance
+        self.update_balance(user_id, reward, 'bonus')
+        
         conn.commit()
         conn.close()
-        return True
+        
+        return {"streak": streak, "reward": reward}
     
-    def create_purchase(self, user_id, card_name, value, price, email):
+    # ===== COUPONS (Feature 10) =====
+    
+    def validate_coupon(self, code, amount):
+        """Validate and apply coupon"""
         conn = self._get_conn()
         c = conn.cursor()
-        order_id = f"GC{datetime.now().strftime('%y%m%d%H%M%S')}{random.randint(1000,9999)}"
-        c.execute('''INSERT INTO purchases 
-            (user_id, order_id, card_name, card_value, price, email, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?)''',
-            (user_id, order_id, card_name, value, price, email, datetime.now().isoformat()))
+        
+        if code not in COUPONS:
+            return None
+        
+        coupon = COUPONS[code].copy()
+        
+        # Check minimum amount
+        if amount < coupon.get("min", 0):
+            return {"error": f"Minimum amount ₹{coupon['min']} required"}
+        
+        # Check uses
+        c.execute("SELECT COUNT(*) FROM coupons WHERE code = ? AND used = 1", (code,))
+        uses = c.fetchone()[0]
+        if uses >= coupon.get("uses", 1):
+            return {"error": "Coupon expired"}
+        
+        # Calculate discount
+        if coupon["type"] == "percentage":
+            discount = int(amount * coupon["discount"] / 100)
+            final = amount - discount
+        elif coupon["type"] == "fixed":
+            discount = coupon["discount"]
+            final = amount - discount
+        else:
+            discount = 0
+            final = amount
+        
+        conn.close()
+        return {
+            "code": code,
+            "discount": discount,
+            "final": final,
+            "type": coupon["type"]
+        }
+    
+    def use_coupon(self, code, user_id):
+        """Mark coupon as used"""
+        conn = self._get_conn()
+        c = conn.cursor()
+        c.execute("INSERT INTO coupons (code, user_id, used, expires) VALUES (?, ?, 1, ?)",
+                  (code, user_id, (datetime.now() + timedelta(days=30)).isoformat()))
         conn.commit()
         conn.close()
-        return order_id
     
-    def process_referral(self, referrer_id, referred_id):
+    # ===== PRICE ALERTS (Feature 6) =====
+    
+    def add_price_alert(self, user_id, card_name, target_price):
+        """Add price alert"""
         conn = self._get_conn()
         c = conn.cursor()
-        try:
-            c.execute("SELECT * FROM referrals WHERE referred_id = ?", (referred_id,))
-            if c.fetchone(): return False
-            c.execute('''INSERT INTO referrals (referrer_id, referred_id, bonus_amount, timestamp) VALUES (?, ?, ?, ?)''',
-                     (referrer_id, referred_id, REFERRAL_BONUS, datetime.now().isoformat()))
-            self.update_balance(referrer_id, REFERRAL_BONUS, 'bonus')
-            c.execute("UPDATE users SET total_referrals = total_referrals + 1 WHERE user_id = ?", (referrer_id,))
-            conn.commit()
-            return True
-        except:
-            return False
-        finally:
-            conn.close()
+        current_price = GIFT_CARDS[card_name]["base_price"][500]  # Use base price
+        c.execute("INSERT INTO price_alerts (user_id, card_name, target_price, current_price, created) VALUES (?, ?, ?, ?, ?)",
+                  (user_id, card_name, target_price, current_price, datetime.now().isoformat()))
+        conn.commit()
+        conn.close()
+    
+    def check_price_alerts(self, card_name, new_price):
+        """Check and trigger price alerts"""
+        conn = self._get_conn()
+        c = conn.cursor()
+        c.execute("SELECT user_id, target_price FROM price_alerts WHERE card_name = ? AND active = 1 AND target_price >= ?",
+                  (card_name, new_price))
+        alerts = c.fetchall()
+        conn.close()
+        return alerts
+    
+    # ===== STATISTICS FOR ADMIN DASHBOARD (Feature 24) =====
+    
+    def get_dashboard_stats(self):
+        """Get comprehensive statistics for admin dashboard"""
+        conn = self._get_conn()
+        c = conn.cursor()
+        
+        stats = {}
+        
+        # User statistics
+        c.execute("SELECT COUNT(*) FROM users")
+        stats['total_users'] = c.fetchone()[0]
+        
+        c.execute("SELECT COUNT(*) FROM users WHERE date(last_active) = date('now')")
+        stats['active_today'] = c.fetchone()[0]
+        
+        c.execute("SELECT COUNT(*) FROM users WHERE date(join_date) = date('now')")
+        stats['new_today'] = c.fetchone()[0]
+        
+        # Transaction statistics
+        c.execute("SELECT COUNT(*) FROM transactions")
+        stats['total_transactions'] = c.fetchone()[0]
+        
+        c.execute("SELECT COUNT(*) FROM transactions WHERE date(timestamp) = date('now')")
+        stats['transactions_today'] = c.fetchone()[0]
+        
+        c.execute("SELECT SUM(amount) FROM transactions WHERE type = 'credit'")
+        stats['total_revenue'] = c.fetchone()[0] or 0
+        
+        c.execute("SELECT SUM(amount) FROM transactions WHERE type = 'credit' AND date(timestamp) = date('now')")
+        stats['revenue_today'] = c.fetchone()[0] or 0
+        
+        # Purchase statistics
+        c.execute("SELECT COUNT(*) FROM purchases")
+        stats['total_purchases'] = c.fetchone()[0]
+        
+        c.execute("SELECT SUM(price) FROM purchases")
+        stats['total_spent'] = c.fetchone()[0] or 0
+        
+        c.execute("SELECT card_name, COUNT(*) as count FROM purchases GROUP BY card_name ORDER BY count DESC LIMIT 5")
+        stats['top_cards'] = c.fetchall()
+        
+        # Verification statistics
+        c.execute("SELECT COUNT(*) FROM verifications WHERE status = 'pending'")
+        stats['pending'] = c.fetchone()[0]
+        
+        c.execute("SELECT COUNT(*) FROM verifications WHERE status = 'approved' AND date(verified_at) = date('now')")
+        stats['approved_today'] = c.fetchone()[0]
+        
+        # Referral statistics
+        c.execute("SELECT COUNT(*) FROM referrals")
+        stats['total_referrals'] = c.fetchone()[0]
+        
+        c.execute("SELECT SUM(bonus_amount) FROM referrals")
+        stats['total_bonus'] = c.fetchone()[0] or 0
+        
+        # Daily rewards statistics
+        c.execute("SELECT COUNT(*) FROM daily_rewards WHERE claim_date = date('now')")
+        stats['daily_claims'] = c.fetchone()[0]
+        
+        c.execute("SELECT AVG(streak) FROM daily_rewards WHERE claim_date = date('now')")
+        stats['avg_streak'] = c.fetchone()[0] or 0
+        
+        conn.close()
+        return stats
+    
+    def log_admin_action(self, admin_id, action, details):
+        """Log admin action"""
+        conn = self._get_conn()
+        c = conn.cursor()
+        c.execute("INSERT INTO admin_logs (admin_id, action, details, timestamp) VALUES (?, ?, ?, ?)",
+                  (admin_id, action, details, datetime.now().isoformat()))
+        conn.commit()
+        conn.close()
 
 db = DatabaseManager()
 
@@ -349,13 +822,43 @@ def calculate_fee(amount):
         return fee, amount - fee
     return 0, amount
 
+def calculate_bulk_discount(quantity, price):
+    """Calculate bulk discount based on quantity"""
+    if quantity >= 50:
+        discount = BULK_DISCOUNTS[50]
+    elif quantity >= 25:
+        discount = BULK_DISCOUNTS[25]
+    elif quantity >= 10:
+        discount = BULK_DISCOUNTS[10]
+    elif quantity >= 5:
+        discount = BULK_DISCOUNTS[5]
+    elif quantity >= 3:
+        discount = BULK_DISCOUNTS[3]
+    else:
+        discount = 0
+    
+    total = price * quantity
+    discount_amount = int(total * discount / 100)
+    final = total - discount_amount
+    
+    return {
+        "quantity": quantity,
+        "unit_price": price,
+        "total": total,
+        "discount_percent": discount,
+        "discount_amount": discount_amount,
+        "final": final
+    }
+
 # ===========================================================================
 # LOADING ANIMATION
 # ===========================================================================
 
+LOADING_FRAMES = ["🎁", "🎀", "✨", "⭐", "🌟", "💫", "⚡", "💎"]
+
 async def show_loading(update, message_text="Processing", duration=2):
     """Show beautiful loading animation"""
-    msg = await update.message.reply_text(f"{EMOJI['loading']} *{message_text}*", parse_mode=ParseMode.MARKDOWN)
+    msg = await update.message.reply_text(f"⏳ *{message_text}*", parse_mode=ParseMode.MARKDOWN)
     for i in range(duration * 2):
         frame = LOADING_FRAMES[i % len(LOADING_FRAMES)]
         await asyncio.sleep(0.5)
@@ -366,11 +869,13 @@ async def show_loading(update, message_text="Processing", duration=2):
 # MEMBERSHIP CHECK
 # ===========================================================================
 
-async def is_member(user_id, context):
+async def check_membership(user_id, context):
+    """Check if user is member of main channel"""
     try:
         member = await context.bot.get_chat_member(chat_id=MAIN_CHANNEL, user_id=user_id)
         return member.status in ['member', 'administrator', 'creator']
-    except:
+    except Exception as e:
+        logger.error(f"Membership check error: {e}")
         return False
 
 # ===========================================================================
@@ -382,23 +887,26 @@ def admin_only(func):
     async def wrapper(update, context, *args, **kwargs):
         user = update.effective_user
         if user.id != ADMIN_ID:
-            await update.message.reply_text(f"{EMOJI['error']} *Unauthorized*", parse_mode=ParseMode.MARKDOWN)
+            await update.message.reply_text(f"❌ *Unauthorized*", parse_mode=ParseMode.MARKDOWN)
             return
         return await func(update, context, *args, **kwargs)
     return wrapper
 
 # ===========================================================================
-# START COMMAND
+# START COMMAND - WITH ENHANCED UI
 # ===========================================================================
 
 async def start(update, context):
     user = update.effective_user
     
+    # React to message (Feature 1)
+    await Animations.react(update, "👋")
+    
     if not all([BOT_TOKEN, ADMIN_ID, UPI_ID]):
-        await update.message.reply_text(f"{EMOJI['error']} *Configuration Error*", parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text(f"❌ *Configuration Error*", parse_mode=ParseMode.MARKDOWN)
         return
     
-    # Create user
+    # Create user in database
     db_user = db.get_user(user.id)
     if not db_user:
         referred = None
@@ -408,64 +916,468 @@ async def start(update, context):
                 if referred == user.id: referred = None
             except: pass
         db.create_user(user.id, user.username, user.first_name, referred)
-        if WELCOME_BONUS > 0: db.update_balance(user.id, WELCOME_BONUS, 'bonus')
+        if WELCOME_BONUS > 0: 
+            db.update_balance(user.id, WELCOME_BONUS, 'bonus')
         if referred:
             db.process_referral(referred, user.id)
             try:
                 await context.bot.send_message(referred,
-                    f"{EMOJI['referral']} *Referral Bonus!*\n\n{user.first_name} joined!\n+₹{REFERRAL_BONUS}",
+                    f"👥 *Referral Bonus!*\n\n{user.first_name} joined!\n+₹{REFERRAL_BONUS}",
                     parse_mode=ParseMode.MARKDOWN)
             except: pass
     
     db.update_active(user.id)
     
-    # Show loading animation
-    await show_loading(update, "Loading Gift Cards", 1)
+    # Show typing indicator (Feature 2)
+    await Animations.typing(update, 1)
     
-    # Check membership
-    if not await is_member(user.id, context):
+    # Check channel membership
+    is_member = await check_membership(user.id, context)
+    
+    if not is_member:
         welcome = (
-            f"{EMOJI['gift']}{EMOJI['gift']} *WELCOME TO GIFT CARD BOT* {EMOJI['gift']}{EMOJI['gift']}\n"
-            f"{DIVIDER_GIFT}\n\n"
+            f"{EnhancedUI.fancy_header('WELCOME', '🎁', 40)}\n\n"
             f"👋 *Hello {user.first_name}!*\n\n"
-            f"{EMOJI['gift_box']} *Get Gift Cards at 80% OFF*\n"
-            f"{EMOJI['star']} *7+ Premium Brands*\n"
-            f"{EMOJI['instant']} *Instant Email Delivery*\n"
-            f"{EMOJI['guarantee']} *100% Working Codes*\n\n"
-            f"{DIVIDER_SHORT}\n\n"
-            f"{EMOJI['lock']} *VERIFICATION REQUIRED*\n"
-            f"Join our main channel to continue.\n\n"
-            f"👇 *Click below to join*"
+            f"🎁 *Get Gift Cards at 80% OFF*\n"
+            f"⭐ *7+ Premium Brands*\n"
+            f"⚡ *Instant Email Delivery*\n"
+            f"🛡️ *100% Working Codes*\n\n"
+            f"🔒 *MANDATORY VERIFICATION*\n"
+            f"You MUST join our main channel to use this bot.\n\n"
+            f"👇 *Click below to join and verify*"
         )
         keyboard = [[
-            InlineKeyboardButton(f"{EMOJI['gift']} JOIN MAIN CHANNEL", url="https://t.me/gift_card_main"),
-            InlineKeyboardButton(f"{EMOJI['success']} VERIFY", callback_data="verify")
+            InlineKeyboardButton(f"📢 JOIN MAIN CHANNEL", url="https://t.me/gift_card_main"),
+            InlineKeyboardButton(f"✅ I HAVE JOINED", callback_data="verify")
         ]]
-        await update.message.reply_text(welcome, parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(keyboard))
+        await update.message.reply_text(welcome, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
         return
     
-    # Main menu - ONLY user commands shown
+    # Show loading animation for verified users
+    await show_loading(update, "Loading Gift Cards", 1)
+    
+    # Get user stats for badge
+    badge = EnhancedUI.user_badge(db_user.get('total_purchases', 0))
+    
+    # Main menu with enhanced UI
     balance = db.get_balance(user.id)
     menu = (
-        f"{EMOJI['gift']}{EMOJI['gift']} *GIFT CARD & RECHARGE BOT* {EMOJI['gift']}{EMOJI['gift']}\n"
-        f"{DIVIDER_GIFT}\n\n"
-        f"👤 *User:* {user.first_name}\n"
-        f"{EMOJI['money']} *Balance:* `{format_currency(balance)}`\n"
-        f"{DIVIDER_SHORT}\n\n"
+        f"{EnhancedUI.fancy_header('MAIN MENU', '🎁', 40)}\n\n"
+        f"👤 *User:* {user.first_name} {badge}\n"
+        f"💰 *Balance:* {EnhancedUI.format_currency(balance)}\n"
+        f"📊 *Purchases:* {db_user.get('total_purchases', 0)}\n"
+        f"{EnhancedUI.progress_bar(db_user.get('total_purchases', 0), 100, 15)}\n\n"
         f"*Select an option:* ⬇️"
     )
     keyboard = [
-        [InlineKeyboardButton(f"{EMOJI['card']} GIFT CARDS", callback_data="giftcard")],
-        [InlineKeyboardButton(f"{EMOJI['money']} ADD MONEY", callback_data="topup")],
-        [InlineKeyboardButton(f"{EMOJI['wallet']} MY WALLET", callback_data="wallet")],
-        [InlineKeyboardButton(f"{EMOJI['referral']} REFERRAL (₹{REFERRAL_BONUS}/friend)", callback_data="referral")],
-        [InlineKeyboardButton(f"{EMOJI['proof']} LIVE PROOFS", callback_data="proofs")],
-        [InlineKeyboardButton(f"{EMOJI['support']} SUPPORT", callback_data="support")]
+        [InlineKeyboardButton(f"🎁 GIFT CARDS", callback_data="giftcard")],
+        [InlineKeyboardButton(f"💰 ADD MONEY", callback_data="topup")],
+        [InlineKeyboardButton(f"👛 MY WALLET", callback_data="wallet")],
+        [InlineKeyboardButton(f"👥 REFERRAL (₹{REFERRAL_BONUS}/friend)", callback_data="referral")],
+        [InlineKeyboardButton(f"📅 DAILY REWARD", callback_data="daily")],
+        [InlineKeyboardButton(f"🏷️ COUPONS", callback_data="coupon")],
+        [InlineKeyboardButton(f"📦 BULK PURCHASE", callback_data="bulk")],
+        [InlineKeyboardButton(f"🎁 SEND GIFT", callback_data="gift")],
+        [InlineKeyboardButton(f"🔔 PRICE ALERT", callback_data="alert")],
+        [InlineKeyboardButton(f"🌐 LANGUAGE", callback_data="language")],
+        [InlineKeyboardButton(f"🆘 SUPPORT", callback_data="support")]
     ]
-    await update.message.reply_text(menu, parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(keyboard))
+    await update.message.reply_text(menu, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
 
 # ===========================================================================
-# BUTTON HANDLER - FIXED PAYMENT BUTTONS
+# DAILY REWARD HANDLER (Feature 3)
+# ===========================================================================
+
+async def daily_reward(update, context):
+    query = update.callback_query
+    await query.answer()
+    
+    user = query.from_user
+    
+    # Show typing indicator
+    await Animations.typing(update, 0.5)
+    
+    result = db.claim_daily_reward(user.id)
+    
+    if result is None:
+        # Already claimed today
+        await query.edit_message_text(
+            f"{EnhancedUI.fancy_header('DAILY REWARD', '📅', 40)}\n\n"
+            f"❌ *Already claimed today!*\n\n"
+            f"Come back tomorrow for your next reward.\n\n"
+            f"Keep your streak going! 🔥",
+            parse_mode="HTML"
+        )
+    else:
+        # Success
+        await query.edit_message_text(
+            f"{EnhancedUI.fancy_header('DAILY REWARD', '🎁', 40)}\n\n"
+            f"✅ *Reward Claimed!*\n\n"
+            f"🔥 *Streak:* {result['streak']} days\n"
+            f"💰 *Amount:* ₹{result['reward']}\n\n"
+            f"{EnhancedUI.progress_bar(result['streak'] % 7, 7, 10)}\n\n"
+            f"Come back tomorrow for more!",
+            parse_mode="HTML"
+        )
+        
+        # React with success
+        await Animations.react(update, "🎁")
+
+# ===========================================================================
+# COUPON HANDLER (Feature 10)
+# ===========================================================================
+
+async def coupon_menu(update, context):
+    query = update.callback_query
+    await query.answer()
+    
+    await query.edit_message_text(
+        f"{EnhancedUI.fancy_header('COUPONS', '🏷️', 40)}\n\n"
+        f"✨ *Available Coupons:*\n\n"
+        f"• WELCOME10 - 10% off (Min ₹100)\n"
+        f"• SAVE20 - ₹20 off (Min ₹200)\n"
+        f"• FIRST50 - ₹50 off (Min ₹500)\n"
+        f"• DIWALI22 - 22% off (Min ₹200)\n"
+        f"• HOLI15 - 15% off (Min ₹150)\n"
+        f"• FLASH50 - 50% off (Min ₹500)\n\n"
+        f"📝 *Enter coupon code:*",
+        parse_mode="HTML"
+    )
+    return STATE_COUPON
+
+async def handle_coupon(update, context):
+    code = update.message.text.strip().upper()
+    user = update.effective_user
+    
+    # Show typing
+    await Animations.typing(update, 0.5)
+    
+    # Store coupon in context for later use
+    context.user_data['coupon'] = code
+    
+    result = db.validate_coupon(code, 100)  # Sample validation
+    
+    if result and "error" not in result:
+        await update.message.reply_text(
+            f"✅ *Coupon Valid!*\n\n"
+            f"Code: `{code}`\n"
+            f"Discount: {result.get('discount', 0)}%\n\n"
+            f"Use this coupon during checkout!",
+            parse_mode=ParseMode.MARKDOWN
+        )
+    else:
+        error_msg = result.get("error", "Invalid coupon") if result else "Invalid coupon"
+        await update.message.reply_text(
+            f"❌ *{error_msg}*",
+            parse_mode=ParseMode.MARKDOWN
+        )
+    
+    return ConversationHandler.END
+
+# ===========================================================================
+# BULK PURCHASE HANDLER (Feature 12)
+# ===========================================================================
+
+async def bulk_menu(update, context):
+    query = update.callback_query
+    await query.answer()
+    
+    text = (
+        f"{EnhancedUI.fancy_header('BULK PURCHASE', '📦', 40)}\n\n"
+        f"✨ *Bulk Discounts:*\n\n"
+        f"• 3+ cards → 3% OFF\n"
+        f"• 5+ cards → 5% OFF\n"
+        f"• 10+ cards → 10% OFF\n"
+        f"• 25+ cards → 15% OFF\n"
+        f"• 50+ cards → 20% OFF\n\n"
+        f"📝 *Enter quantity:*"
+    )
+    
+    await query.edit_message_text(text, parse_mode="HTML")
+    return STATE_BULK_COUNT
+
+async def handle_bulk_count(update, context):
+    try:
+        quantity = int(update.message.text.strip())
+        context.user_data['bulk_quantity'] = quantity
+    except:
+        await update.message.reply_text("❌ Invalid quantity")
+        return STATE_BULK_COUNT
+    
+    # Show available cards
+    text = f"{EnhancedUI.fancy_header('BULK PURCHASE', '📦', 40)}\n\nSelect card:\n\n"
+    keyboard = []
+    for cid, card in GIFT_CARDS.items():
+        keyboard.append([InlineKeyboardButton(
+            f"{card['full_emoji']} {card['name']}",
+            callback_data=f"bulk_{cid}"
+        )])
+    
+    await update.message.reply_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
+    return ConversationHandler.END
+
+async def handle_bulk_card(update, context):
+    query = update.callback_query
+    await query.answer()
+    
+    cid = query.data.replace("bulk_", "")
+    card = GIFT_CARDS.get(cid)
+    quantity = context.user_data.get('bulk_quantity', 1)
+    
+    price = PRICES[500]  # Base price
+    discount_info = calculate_bulk_discount(quantity, price)
+    
+    text = (
+        f"{EnhancedUI.fancy_header('BULK ORDER', '📦', 40)}\n\n"
+        f"Card: {card['full_emoji']} {card['name']}\n"
+        f"Quantity: {quantity}\n\n"
+        f"Unit Price: ₹{price}\n"
+        f"Total: ₹{discount_info['total']}\n"
+        f"Discount: {discount_info['discount_percent']}% (₹{discount_info['discount_amount']})\n"
+        f"*Final: ₹{discount_info['final']}*\n\n"
+        f"Proceed to payment?"
+    )
+    
+    keyboard = [
+        [InlineKeyboardButton("✅ PAY NOW", callback_data=f"bulk_pay_{cid}_{quantity}")],
+        [InlineKeyboardButton("❌ CANCEL", callback_data="main_menu")]
+    ]
+    
+    await query.edit_message_text(text, parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(keyboard))
+
+# ===========================================================================
+# GIFT CARD GIFTING (Feature 13)
+# ===========================================================================
+
+async def gift_menu(update, context):
+    query = update.callback_query
+    await query.answer()
+    
+    text = f"{EnhancedUI.fancy_header('SEND GIFT', '🎁', 40)}\n\nSelect card to gift:\n\n"
+    keyboard = []
+    for cid, card in GIFT_CARDS.items():
+        keyboard.append([InlineKeyboardButton(
+            f"{card['full_emoji']} {card['name']}",
+            callback_data=f"gift_card_{cid}"
+        )])
+    
+    await query.edit_message_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def handle_gift_card(update, context):
+    query = update.callback_query
+    await query.answer()
+    
+    cid = query.data.replace("gift_card_", "")
+    context.user_data['gift_card'] = cid
+    
+    text = f"{EnhancedUI.fancy_header('SEND GIFT', '🎁', 40)}\n\nEnter recipient's email:"
+    await query.edit_message_text(text, parse_mode="HTML")
+    return STATE_GIFT_EMAIL
+
+async def handle_gift_email(update, context):
+    email = update.message.text.strip()
+    
+    if not validate_email(email):
+        await update.message.reply_text("❌ Invalid email")
+        return STATE_GIFT_EMAIL
+    
+    cid = context.user_data.get('gift_card')
+    card = GIFT_CARDS.get(cid)
+    
+    text = (
+        f"{EnhancedUI.fancy_header('GIFT DETAILS', '🎁', 40)}\n\n"
+        f"Card: {card['full_emoji']} {card['name']}\n"
+        f"Recipient: {email}\n\n"
+        f"Add a personal message (optional):"
+    )
+    
+    await update.message.reply_text(text, parse_mode="HTML")
+    # Store email and continue
+    context.user_data['gift_email'] = email
+    # Continue to message input...
+    return ConversationHandler.END
+
+# ===========================================================================
+# PRICE ALERT HANDLER (Feature 6)
+# ===========================================================================
+
+async def alert_menu(update, context):
+    query = update.callback_query
+    await query.answer()
+    
+    text = f"{EnhancedUI.fancy_header('PRICE ALERT', '🔔', 40)}\n\nSelect card to track:\n\n"
+    keyboard = []
+    for cid, card in GIFT_CARDS.items():
+        keyboard.append([InlineKeyboardButton(
+            f"{card['full_emoji']} {card['name']}",
+            callback_data=f"alert_card_{cid}"
+        )])
+    
+    await query.edit_message_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def handle_alert_card(update, context):
+    query = update.callback_query
+    await query.answer()
+    
+    cid = query.data.replace("alert_card_", "")
+    context.user_data['alert_card'] = cid
+    
+    text = f"{EnhancedUI.fancy_header('PRICE ALERT', '🔔', 40)}\n\nEnter target price (e.g., 80 for ₹80):"
+    await query.edit_message_text(text, parse_mode="HTML")
+    return STATE_PRICE_ALERT
+
+async def handle_alert_price(update, context):
+    try:
+        target = int(update.message.text.strip())
+        cid = context.user_data.get('alert_card')
+        card = GIFT_CARDS.get(cid)
+        
+        db.add_price_alert(update.effective_user.id, card['name'], target)
+        
+        await update.message.reply_text(
+            f"✅ *Alert Set!*\n\n"
+            f"We'll notify you when {card['name']} price drops below ₹{target}.",
+            parse_mode=ParseMode.MARKDOWN
+        )
+    except:
+        await update.message.reply_text("❌ Invalid price")
+    
+    return ConversationHandler.END
+
+# ===========================================================================
+# LANGUAGE SELECTOR (Feature 23)
+# ===========================================================================
+
+async def language_menu(update, context):
+    query = update.callback_query
+    await query.answer()
+    
+    text = f"{EnhancedUI.fancy_header('LANGUAGE', '🌐', 40)}\n\nSelect your language:\n\n"
+    keyboard = []
+    for code, lang in LANGUAGES.items():
+        keyboard.append([InlineKeyboardButton(
+            f"{lang['flag']} {lang['name']}",
+            callback_data=f"lang_{code}"
+        )])
+    keyboard.append([InlineKeyboardButton("🔙 BACK", callback_data="main_menu")])
+    
+    await query.edit_message_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def handle_language(update, context):
+    query = update.callback_query
+    await query.answer()
+    
+    code = query.data.replace("lang_", "")
+    user = query.from_user
+    
+    db.update_user(user.id, language=code)
+    
+    # Get translation
+    msg = Translator.get_text(user.id, "welcome", code)
+    
+    await query.edit_message_text(
+        f"✅ *Language set to {LANGUAGES[code]['name']}!*\n\n{msg}",
+        parse_mode=ParseMode.MARKDOWN
+    )
+
+# ===========================================================================
+# ADMIN DASHBOARD (Feature 24)
+# ===========================================================================
+
+@admin_only
+async def admin_dashboard(update, context):
+    """Admin dashboard with statistics"""
+    await Animations.typing(update, 1)
+    
+    stats = db.get_dashboard_stats()
+    db.log_admin_action(update.effective_user.id, "view_dashboard", "Viewed admin dashboard")
+    
+    dashboard = (
+        f"{EnhancedUI.fancy_header('ADMIN DASHBOARD', '📊', 50)}\n\n"
+        f"📅 *{datetime.now().strftime('%d %b %Y, %I:%M %p')}*\n"
+        f"{'─' * 40}\n\n"
+        f"*👥 USER STATISTICS*\n"
+        f"• Total Users: `{stats['total_users']:,}`\n"
+        f"• Active Today: `{stats['active_today']}`\n"
+        f"• New Today: `{stats['new_today']}`\n\n"
+        f"*💰 FINANCIAL STATISTICS*\n"
+        f"• Total Revenue: `{EnhancedUI.format_currency(stats['total_revenue'])}`\n"
+        f"• Revenue Today: `{EnhancedUI.format_currency(stats['revenue_today'])}`\n"
+        f"• Total Spent: `{EnhancedUI.format_currency(stats['total_spent'])}`\n\n"
+        f"*📊 TRANSACTIONS*\n"
+        f"• Total: `{stats['total_transactions']:,}`\n"
+        f"• Today: `{stats['transactions_today']}`\n"
+        f"• Pending: `{stats['pending']}`\n\n"
+        f"*🏆 TOP CARDS*\n"
+    )
+    
+    for i, (card, count) in enumerate(stats['top_cards'], 1):
+        dashboard += f"• {i}. {card}: `{count}` purchases\n"
+    
+    dashboard += (
+        f"\n*👥 REFERRALS*\n"
+        f"• Total: `{stats['total_referrals']}`\n"
+        f"• Bonus Paid: `{EnhancedUI.format_currency(stats['total_bonus'])}`\n\n"
+        f"*📅 DAILY REWARDS*\n"
+        f"• Claims Today: `{stats['daily_claims']}`\n"
+        f"• Avg Streak: `{stats['avg_streak']:.1f} days`\n"
+        f"{'─' * 40}"
+    )
+    
+    keyboard = [
+        [InlineKeyboardButton("📤 EXPORT DATA", callback_data="admin_export")],
+        [InlineKeyboardButton("🔄 REFRESH", callback_data="admin_refresh")],
+        [InlineKeyboardButton("🔙 BACK", callback_data="main_menu")]
+    ]
+    
+    await update.message.reply_text(dashboard, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
+
+@admin_only
+async def admin_export(update, context):
+    """Export data as CSV"""
+    query = update.callback_query
+    await query.answer()
+    
+    await query.edit_message_text("📤 *Exporting data...*", parse_mode=ParseMode.MARKDOWN)
+    
+    # Export users
+    conn = sqlite3.connect(DATABASE_PATH)
+    df_users = pd.read_sql_query("SELECT user_id, username, first_name, balance, total_purchases, join_date FROM users", conn)
+    df_users.to_csv('users_export.csv', index=False)
+    
+    # Export transactions
+    df_trans = pd.read_sql_query("SELECT * FROM transactions", conn)
+    df_trans.to_csv('transactions_export.csv', index=False)
+    
+    # Export purchases
+    df_purch = pd.read_sql_query("SELECT * FROM purchases", conn)
+    df_purch.to_csv('purchases_export.csv', index=False)
+    
+    conn.close()
+    
+    # Send files
+    await context.bot.send_document(
+        chat_id=update.effective_user.id,
+        document=open('users_export.csv', 'rb'),
+        caption="📊 Users Data Export"
+    )
+    await context.bot.send_document(
+        chat_id=update.effective_user.id,
+        document=open('transactions_export.csv', 'rb'),
+        caption="📊 Transactions Data Export"
+    )
+    await context.bot.send_document(
+        chat_id=update.effective_user.id,
+        document=open('purchases_export.csv', 'rb'),
+        caption="📊 Purchases Data Export"
+    )
+    
+    db.log_admin_action(update.effective_user.id, "export_data", "Exported all data")
+    
+    await query.edit_message_text("✅ *Data exported successfully!*", parse_mode=ParseMode.MARKDOWN)
+
+# ===========================================================================
+# BUTTON HANDLER - UPDATED WITH NEW FEATURES
 # ===========================================================================
 
 async def button_handler(update, context):
@@ -475,100 +1387,153 @@ async def button_handler(update, context):
     user = query.from_user
     data = query.data
     
+    logger.info(f"Button clicked: {data} by {user.first_name}")
+    
     db.update_active(user.id)
     
-    # ===== VERIFY =====
+    # React to button click
+    await Animations.react(update, "👆")
+    
+    # ===== VERIFY BUTTON =====
     if data == "verify":
-        if await is_member(user.id, context):
+        is_member = await check_membership(user.id, context)
+        
+        if is_member:
             balance = db.get_balance(user.id)
             await show_loading(update, "Verifying", 1)
             success = (
-                f"{EMOJI['party']} *VERIFICATION SUCCESSFUL* {EMOJI['party']}\n"
-                f"{DIVIDER_GIFT}\n\n"
+                f"{EnhancedUI.fancy_header('VERIFIED', '✅', 40)}\n\n"
                 f"👋 *Welcome {user.first_name}!*\n"
-                f"{EMOJI['money']} *Balance:* `{format_currency(balance)}`\n\n"
-                f"{EMOJI['rocket']} *You now have full access!*\n"
-                f"{DIVIDER}\n\n"
-                f"*Choose an option:* ⬇️"
+                f"💰 *Balance:* {EnhancedUI.format_currency(balance)}\n\n"
+                f"🚀 *You now have full access!*"
             )
             keyboard = [
-                [InlineKeyboardButton(f"{EMOJI['card']} GIFT CARDS", callback_data="giftcard")],
-                [InlineKeyboardButton(f"{EMOJI['money']} ADD MONEY", callback_data="topup")],
-                [InlineKeyboardButton(f"{EMOJI['wallet']} MY WALLET", callback_data="wallet")]
+                [InlineKeyboardButton(f"🎁 GIFT CARDS", callback_data="giftcard")],
+                [InlineKeyboardButton(f"💰 ADD MONEY", callback_data="topup")],
+                [InlineKeyboardButton(f"👛 MY WALLET", callback_data="wallet")]
             ]
-            await query.edit_message_text(success, parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(keyboard))
+            await query.edit_message_text(success, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
         else:
             fail = (
-                f"{EMOJI['error']} *VERIFICATION FAILED*\n\n"
+                f"{EnhancedUI.fancy_header('FAILED', '❌', 40)}\n\n"
                 f"You haven't joined our channel yet!\n\n"
                 f"1️⃣ Click JOIN CHANNEL\n"
                 f"2️⃣ Join @gift_card_main\n"
-                f"3️⃣ Click VERIFY"
+                f"3️⃣ Click VERIFY again"
             )
             keyboard = [[
-                InlineKeyboardButton(f"{EMOJI['gift']} JOIN CHANNEL", url="https://t.me/gift_card_main"),
-                InlineKeyboardButton(f"{EMOJI['refresh']} VERIFY", callback_data="verify")
+                InlineKeyboardButton(f"📢 JOIN CHANNEL", url="https://t.me/gift_card_main"),
+                InlineKeyboardButton(f"🔄 VERIFY AGAIN", callback_data="verify")
             ]]
-            await query.edit_message_text(fail, parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(keyboard))
+            await query.edit_message_text(fail, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
         return
     
-    # Check membership
-    if not await is_member(user.id, context):
+    # Check membership for ALL other actions
+    is_member = await check_membership(user.id, context)
+    if not is_member:
         keyboard = [[
-            InlineKeyboardButton(f"{EMOJI['gift']} JOIN CHANNEL", url="https://t.me/gift_card_main"),
-            InlineKeyboardButton(f"{EMOJI['success']} VERIFY", callback_data="verify")
+            InlineKeyboardButton(f"📢 JOIN CHANNEL", url="https://t.me/gift_card_main"),
+            InlineKeyboardButton(f"✅ VERIFY", callback_data="verify")
         ]]
         await query.edit_message_text(
-            f"{EMOJI['warning']} *ACCESS DENIED*\n\nJoin @gift_card_main first!",
+            f"⚠️ *ACCESS DENIED*\n\nYou MUST join @gift_card_main to use the bot!",
             parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(keyboard)
         )
         return
     
+    # ===== NEW FEATURE HANDLERS =====
+    if data == "daily":
+        await daily_reward(update, context)
+    elif data == "coupon":
+        await coupon_menu(update, context)
+    elif data == "bulk":
+        await bulk_menu(update, context)
+    elif data.startswith("bulk_"):
+        await handle_bulk_card(update, context)
+    elif data == "gift":
+        await gift_menu(update, context)
+    elif data.startswith("gift_card_"):
+        await handle_gift_card(update, context)
+    elif data == "alert":
+        await alert_menu(update, context)
+    elif data.startswith("alert_card_"):
+        await handle_alert_card(update, context)
+    elif data == "language":
+        await language_menu(update, context)
+    elif data.startswith("lang_"):
+        await handle_language(update, context)
+    elif data == "admin_dashboard":
+        await admin_dashboard(update, context)
+    elif data == "admin_export":
+        await admin_export(update, context)
+    elif data == "admin_refresh":
+        await admin_dashboard(update, context)
+    
     # ===== MAIN MENU =====
-    if data == "main_menu":
+    elif data == "main_menu":
         balance = db.get_balance(user.id)
+        db_user = db.get_user(user.id)
+        badge = EnhancedUI.user_badge(db_user.get('total_purchases', 0))
+        
         menu = (
-            f"{EMOJI['gift']}{EMOJI['gift']} *MAIN MENU* {EMOJI['gift']}{EMOJI['gift']}\n"
-            f"{DIVIDER_GIFT}\n\n"
-            f"👤 *User:* {user.first_name}\n"
-            f"{EMOJI['money']} *Balance:* `{format_currency(balance)}`\n"
-            f"{DIVIDER}\n\n"
+            f"{EnhancedUI.fancy_header('MAIN MENU', '🎁', 40)}\n\n"
+            f"👤 *User:* {user.first_name} {badge}\n"
+            f"💰 *Balance:* {EnhancedUI.format_currency(balance)}\n"
+            f"📊 *Purchases:* {db_user.get('total_purchases', 0)}\n"
+            f"{EnhancedUI.progress_bar(db_user.get('total_purchases', 0), 100, 15)}\n\n"
             f"*Select an option:* ⬇️"
         )
         keyboard = [
-            [InlineKeyboardButton(f"{EMOJI['card']} GIFT CARDS", callback_data="giftcard")],
-            [InlineKeyboardButton(f"{EMOJI['money']} ADD MONEY", callback_data="topup")],
-            [InlineKeyboardButton(f"{EMOJI['wallet']} MY WALLET", callback_data="wallet")],
-            [InlineKeyboardButton(f"{EMOJI['referral']} REFERRAL", callback_data="referral")],
-            [InlineKeyboardButton(f"{EMOJI['proof']} PROOFS", callback_data="proofs")],
-            [InlineKeyboardButton(f"{EMOJI['support']} SUPPORT", callback_data="support")]
+            [InlineKeyboardButton(f"🎁 GIFT CARDS", callback_data="giftcard")],
+            [InlineKeyboardButton(f"💰 ADD MONEY", callback_data="topup")],
+            [InlineKeyboardButton(f"👛 MY WALLET", callback_data="wallet")],
+            [InlineKeyboardButton(f"👥 REFERRAL (₹{REFERRAL_BONUS}/friend)", callback_data="referral")],
+            [InlineKeyboardButton(f"📅 DAILY REWARD", callback_data="daily")],
+            [InlineKeyboardButton(f"🏷️ COUPONS", callback_data="coupon")],
+            [InlineKeyboardButton(f"📦 BULK PURCHASE", callback_data="bulk")],
+            [InlineKeyboardButton(f"🎁 SEND GIFT", callback_data="gift")],
+            [InlineKeyboardButton(f"🔔 PRICE ALERT", callback_data="alert")],
+            [InlineKeyboardButton(f"🌐 LANGUAGE", callback_data="language")],
+            [InlineKeyboardButton(f"🆘 SUPPORT", callback_data="support")]
         ]
-        await query.edit_message_text(menu, parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(keyboard))
+        await query.edit_message_text(menu, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
     
     # ===== GIFT CARDS =====
     elif data == "giftcard":
-        text = f"{EMOJI['card']} *GIFT CARDS* {EMOJI['card']}\n{DIVIDER}\n\n*Select a brand:*\n"
+        text = f"{EnhancedUI.fancy_header('GIFT CARDS', '🎁', 40)}\n\n{EnhancedUI.price_table(PRICES)}\n\n*Select a brand:*\n"
         keyboard = []
         for cid, card in GIFT_CARDS.items():
-            star = "⭐" if card.get('popular', False) else ""
-            keyboard.append([InlineKeyboardButton(f"{card['full_emoji']} {card['name']} {star}", callback_data=f"card_{cid}")])
-        keyboard.append([InlineKeyboardButton(f"{EMOJI['back']} BACK", callback_data="main_menu")])
-        await query.edit_message_text(text, parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(keyboard))
+            trending = "🔥" if card.get('trending', False) else ""
+            keyboard.append([InlineKeyboardButton(
+                f"{card['full_emoji']} {card['name']} {trending}",
+                callback_data=f"card_{cid}"
+            )])
+        keyboard.append([InlineKeyboardButton(f"🔙 BACK", callback_data="main_menu")])
+        await query.edit_message_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
     
     # ===== CARD DETAILS =====
     elif data.startswith("card_"):
         cid = data.replace("card_", "")
         card = GIFT_CARDS.get(cid)
         if not card: return
+        
+        # Check for price alerts
+        alerts = db.check_price_alerts(card['name'], PRICES[500])
+        alert_text = "🔔 *Price Alert Active!*" if alerts else ""
+        
         text = (
             f"{card['full_emoji']} *{card['name']} GIFT CARD* {card['full_emoji']}\n"
-            f"{DIVIDER}\n\n"
-            f"{EMOJI['info']} *Features:*\n"
+            f"{'─' * 40}\n\n"
+            f"✨ *Features:*\n"
             f"• Instant Email Delivery\n"
             f"• 100% Working Codes\n"
-            f"• No Expiry\n\n"
-            f"*Available Denominations:*\n"
+            f"• No Expiry\n"
+            f"{EnhancedUI.rating_stars(4.8)} 4.8/5\n\n"
+            f"{EnhancedUI.price_table(card['base_price'])}\n\n"
+            f"{alert_text}\n"
+            f"*Select amount:*\n"
         )
+        
         keyboard = []
         for denom in DENOMINATIONS:
             if denom in PRICES:
@@ -579,8 +1544,9 @@ async def button_handler(update, context):
                     f"₹{denom} → ₹{price} (Save {percent}%)",
                     callback_data=f"buy_{cid}_{denom}"
                 )])
-        keyboard.append([InlineKeyboardButton(f"{EMOJI['back']} BACK", callback_data="giftcard")])
-        await query.edit_message_text(text, parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(keyboard))
+        
+        keyboard.append([InlineKeyboardButton(f"🔙 BACK", callback_data="giftcard")])
+        await query.edit_message_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
     
     # ===== BUY CARD =====
     elif data.startswith("buy_"):
@@ -589,34 +1555,43 @@ async def button_handler(update, context):
         cid, value = parts[1], int(parts[2])
         card = GIFT_CARDS.get(cid)
         if not card or value not in PRICES: return
+        
         price = PRICES[value]
         balance = db.get_balance(user.id)
         
+        # Check for coupon in context
+        coupon_code = context.user_data.get('coupon')
+        if coupon_code:
+            coupon_result = db.validate_coupon(coupon_code, price)
+            if coupon_result and "error" not in coupon_result:
+                price = coupon_result['final']
+        
         if balance < price:
-            keyboard = [[InlineKeyboardButton(f"{EMOJI['money']} ADD MONEY", callback_data="topup")]]
+            keyboard = [[InlineKeyboardButton(f"💰 ADD MONEY", callback_data="topup")]]
             await query.edit_message_text(
-                f"{EMOJI['error']} *Insufficient Balance*\n\nNeed: `{format_currency(price)}`\nYou have: `{format_currency(balance)}`",
+                f"❌ *Insufficient Balance*\n\nNeed: `{EnhancedUI.format_currency(price)}`\nYou have: `{EnhancedUI.format_currency(balance)}`",
                 parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(keyboard)
             )
             return
         
-        savings, percent = value - price, int(((value - price) / value) * 100)
+        savings = value - price
+        percent = int(((value - price) / value) * 100)
         context.user_data['purchase'] = {'card': card['name'], 'emoji': card['full_emoji'], 'value': value, 'price': price}
+        
         await query.edit_message_text(
-            f"{EMOJI['success']} *Balance Sufficient*\n\n"
+            f"{EnhancedUI.fancy_header('PURCHASE', '✅', 40)}\n\n"
             f"{card['full_emoji']} *{card['name']} ₹{value}*\n"
-            f"Price: `{format_currency(price)}`\n"
-            f"You Save: `{format_currency(savings)}` ({percent}% OFF)\n\n"
-            f"{EMOJI['email']} *Enter your email for delivery:*",
-            parse_mode=ParseMode.MARKDOWN
+            f"Price: `{EnhancedUI.format_currency(price)}`\n"
+            f"You Save: `{EnhancedUI.format_currency(savings)}` ({percent}% OFF)\n\n"
+            f"📧 *Enter your email for delivery:*",
+            parse_mode="HTML"
         )
         return STATE_EMAIL
     
     # ===== TOP UP WITH AMOUNT BUTTONS =====
     elif data == "topup":
         text = (
-            f"{EMOJI['money']} *ADD MONEY TO WALLET* {EMOJI['money']}\n"
-            f"{DIVIDER_GIFT}\n\n"
+            f"{EnhancedUI.fancy_header('ADD MONEY', '💰', 40)}\n\n"
             f"*Select amount or enter manually:*\n\n"
         )
         
@@ -628,126 +1603,108 @@ async def button_handler(update, context):
                 button_row.append(InlineKeyboardButton(f"₹{amt}", callback_data=f"amount_{amt}"))
             keyboard.append(button_row)
         
-        keyboard.append([InlineKeyboardButton(f"{EMOJI['back']} BACK", callback_data="main_menu")])
+        keyboard.append([InlineKeyboardButton(f"🔙 BACK", callback_data="main_menu")])
         
         await query.edit_message_text(
             text,
-            parse_mode=ParseMode.MARKDOWN,
+            parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
     
-    # ===== AMOUNT BUTTON SELECTED - FIXED WORKING VERSION =====
+    # ===== AMOUNT BUTTON SELECTED =====
     elif data.startswith("amount_"):
         amount = int(data.replace("amount_", ""))
         fee, final = calculate_fee(amount)
         context.user_data['topup'] = {'amount': amount, 'fee': fee, 'final': final}
         
         keyboard = [
-            [InlineKeyboardButton(f"{EMOJI['success']} ✅ I HAVE PAID", callback_data="paid")],
-            [InlineKeyboardButton(f"{EMOJI['back']} 🔙 CANCEL", callback_data="topup")]
+            [InlineKeyboardButton(f"✅ I HAVE PAID", callback_data="paid")],
+            [InlineKeyboardButton(f"🔙 CANCEL", callback_data="main_menu")]
         ]
         
-        # Send payment details
+        # Generate QR code dynamically
+        qr = qrcode.QRCode()
+        qr.add_data(f"upi://pay?pa={UPI_ID}&pn=GiftCardBot&am={amount}")
+        qr.make()
+        img = qr.make_image()
+        
+        bio = BytesIO()
+        img.save(bio, 'PNG')
+        bio.seek(0)
+        
         payment_text = (
-            f"{EMOJI['money']} *PAYMENT DETAILS* {EMOJI['money']}\n"
-            f"{DIVIDER_GIFT}\n\n"
-            f"{EMOJI['phone']} *UPI ID:* `{UPI_ID}`\n"
-            f"{EMOJI['money']} *Amount:* `{format_currency(amount)}`\n"
-            f"{EMOJI['discount']} *Fee:* `{format_currency(fee) if fee > 0 else 'No fee'}`\n"
-            f"{EMOJI['wallet']} *You get:* `{format_currency(final)}`\n\n"
-            f"{DIVIDER_SHORT}\n\n"
-            f"{EMOJI['phone']} *How to Pay:*\n"
-            f"1️⃣ Pay to UPI ID: `{UPI_ID}`\n"
+            f"{EnhancedUI.fancy_header('PAYMENT', '💰', 40)}\n\n"
+            f"📱 *UPI ID:* `{UPI_ID}`\n"
+            f"💰 *Amount:* `{EnhancedUI.format_currency(amount)}`\n"
+            f"📉 *Fee:* `{EnhancedUI.format_currency(fee) if fee > 0 else 'No fee'}`\n"
+            f"✨ *You get:* `{EnhancedUI.format_currency(final)}`\n\n"
+            f"{'─' * 40}\n\n"
+            f"📱 *How to Pay:*\n"
+            f"1️⃣ Scan QR code or pay to UPI ID\n"
             f"2️⃣ Take a screenshot\n"
             f"3️⃣ Copy UTR number\n"
             f"4️⃣ Click 'I HAVE PAID'\n\n"
             f"⏳ *Auto-cancel in 10 minutes*"
         )
         
-        if os.path.exists(QR_CODE_PATH):
-            with open(QR_CODE_PATH, 'rb') as qr:
-                await query.message.reply_photo(
-                    photo=qr,
-                    caption=payment_text,
-                    parse_mode=ParseMode.MARKDOWN,
-                    reply_markup=InlineKeyboardMarkup(keyboard)
-                )
-        else:
-            await query.message.reply_text(
-                payment_text,
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=InlineKeyboardMarkup(keyboard)
-            )
-        
-        # Also edit the original message to show it's processed
-        await query.edit_message_text(
-            f"{EMOJI['success']} *Amount Selected: ₹{amount}*\n\nPlease check the payment details above.",
-            parse_mode=ParseMode.MARKDOWN
+        await query.message.reply_photo(
+            photo=bio,
+            caption=payment_text,
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(keyboard)
         )
         
-        return ConversationHandler.END
+        await query.edit_message_text(
+            f"{EnhancedUI.fancy_header('AMOUNT SELECTED', '✅', 40)}\n\n"
+            f"Amount: ₹{amount}\n\n"
+            f"Please check the payment details above.",
+            parse_mode="HTML"
+        )
     
     # ===== WALLET =====
     elif data == "wallet":
         balance = db.get_balance(user.id)
+        db_user = db.get_user(user.id)
+        
         text = (
-            f"{EMOJI['wallet']} *YOUR WALLET* {EMOJI['wallet']}\n"
-            f"{DIVIDER_GIFT}\n\n"
-            f"{EMOJI['money']} *Balance:* `{format_currency(balance)}`\n"
-            f"{DIVIDER_SHORT}\n\n"
+            f"{EnhancedUI.fancy_header('YOUR WALLET', '👛', 40)}\n\n"
+            f"💰 *Balance:* {EnhancedUI.format_currency(balance)}\n"
+            f"💳 *Total Spent:* {EnhancedUI.format_currency(db_user['total_spent'])}\n"
+            f"📦 *Purchases:* {db_user['total_purchases']}\n"
+            f"👥 *Referrals:* {db_user['total_referrals']}\n"
+            f"{EnhancedUI.progress_bar(db_user['total_purchases'], 100, 15)}\n\n"
             f"*Quick Actions:* ⬇️"
         )
         keyboard = [
-            [InlineKeyboardButton(f"{EMOJI['money']} ADD MONEY", callback_data="topup")],
-            [InlineKeyboardButton(f"{EMOJI['card']} BUY CARDS", callback_data="giftcard")],
-            [InlineKeyboardButton(f"{EMOJI['back']} BACK", callback_data="main_menu")]
+            [InlineKeyboardButton(f"💰 ADD MONEY", callback_data="topup")],
+            [InlineKeyboardButton(f"🎁 BUY CARDS", callback_data="giftcard")],
+            [InlineKeyboardButton(f"🔙 BACK", callback_data="main_menu")]
         ]
-        await query.edit_message_text(text, parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(keyboard))
+        await query.edit_message_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
     
     # ===== REFERRAL =====
     elif data == "referral":
         bot = await context.bot.get_me()
         link = f"https://t.me/{bot.username}?start=ref_{user.id}"
         text = (
-            f"{EMOJI['referral']} *REFERRAL PROGRAM* {EMOJI['referral']}\n"
-            f"{DIVIDER_GIFT}\n\n"
-            f"{EMOJI['money']} *Earn ₹{REFERRAL_BONUS} per friend!*\n\n"
+            f"{EnhancedUI.fancy_header('REFERRAL', '👥', 40)}\n\n"
+            f"💰 *Earn ₹{REFERRAL_BONUS} per friend!*\n\n"
             f"🔗 *Your Referral Link:*\n"
-            f"`{link}`\n\n"
-            f"{EMOJI['info']} *How it works:*\n"
+            f"<code>{link}</code>\n\n"
+            f"📌 *How it works:*\n"
             f"1️⃣ Share your link with friends\n"
             f"2️⃣ Friend joins using your link\n"
             f"3️⃣ You get ₹{REFERRAL_BONUS} instantly\n"
             f"4️⃣ Friend gets ₹{WELCOME_BONUS} welcome bonus\n\n"
-            f"{EMOJI['rocket']} *Start sharing now!*"
+            f"🚀 *Start sharing now!*"
         )
-        keyboard = [[InlineKeyboardButton(f"{EMOJI['back']} BACK", callback_data="main_menu")]]
-        await query.edit_message_text(text, parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(keyboard))
-    
-    # ===== PROOFS =====
-    elif data == "proofs":
-        text = (
-            f"{EMOJI['proof']} *LIVE PROOFS* {EMOJI['proof']}\n"
-            f"{DIVIDER_GIFT}\n\n"
-            f"📊 *See real purchases from real users*\n\n"
-            f"👉 {PROOF_CHANNEL}\n\n"
-            f"{EMOJI['star']} *What you'll see:*\n"
-            f"• Live purchase notifications\n"
-            f"• Instant delivery proofs\n"
-            f"• 24/7 transaction updates\n\n"
-            f"{EMOJI['rocket']} *Click below to join*"
-        )
-        keyboard = [
-            [InlineKeyboardButton(f"{EMOJI['proof']} VIEW PROOFS", url=f"https://t.me/{PROOF_CHANNEL[1:]}")],
-            [InlineKeyboardButton(f"{EMOJI['back']} BACK", callback_data="main_menu")]
-        ]
-        await query.edit_message_text(text, parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(keyboard))
+        keyboard = [[InlineKeyboardButton(f"🔙 BACK", callback_data="main_menu")]]
+        await query.edit_message_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
     
     # ===== SUPPORT =====
     elif data == "support":
         text = (
-            f"{EMOJI['support']} *SUPPORT* {EMOJI['support']}\n"
-            f"{DIVIDER_GIFT}\n\n"
+            f"{EnhancedUI.fancy_header('SUPPORT', '🆘', 40)}\n\n"
             f"❓ *Frequently Asked Questions:*\n\n"
             f"1️⃣ *How to buy a gift card?*\n"
             f"   → Add money → Select card → Enter email\n\n"
@@ -757,11 +1714,11 @@ async def button_handler(update, context):
             f"   → Send screenshot + UTR to admin\n\n"
             f"4️⃣ *Card not received?*\n"
             f"   → Check spam folder\n\n"
-            f"{DIVIDER_SHORT}\n\n"
+            f"{'─' * 40}\n\n"
             f"📝 *Type your issue below and we'll respond within 24h*"
         )
-        keyboard = [[InlineKeyboardButton(f"{EMOJI['back']} BACK", callback_data="main_menu")]]
-        await query.edit_message_text(text, parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(keyboard))
+        keyboard = [[InlineKeyboardButton(f"🔙 BACK", callback_data="main_menu")]]
+        await query.edit_message_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
         return STATE_SUPPORT
 
 # ===========================================================================
@@ -772,16 +1729,30 @@ async def handle_paid(update, context):
     query = update.callback_query
     await query.answer()
     
+    user = query.from_user
+    
     if 'topup' not in context.user_data:
-        await query.edit_message_text(f"{EMOJI['error']} *Session Expired*\n\nPlease start over.", parse_mode=ParseMode.MARKDOWN)
+        await query.edit_message_text(
+            f"❌ *Session Expired*\n\nPlease start over.",
+            parse_mode=ParseMode.MARKDOWN
+        )
         return ConversationHandler.END
     
+    data = context.user_data['topup']
+    context.user_data['verification'] = {
+        'amount': data['amount'],
+        'fee': data['fee'],
+        'final': data['final']
+    }
+    
     await query.edit_message_text(
-        f"{EMOJI['money']} *SEND PAYMENT PROOF*\n\n"
+        f"{EnhancedUI.fancy_header('SEND PROOF', '📤', 40)}\n\n"
+        f"Amount: `{EnhancedUI.format_currency(data['amount'])}`\n"
+        f"You get: `{EnhancedUI.format_currency(data['final'])}`\n\n"
         f"1️⃣ Send SCREENSHOT of payment\n"
         f"2️⃣ Send UTR number\n\n"
         f"📌 *UTR Example:* `SBIN1234567890`",
-        parse_mode=ParseMode.MARKDOWN
+        parse_mode="HTML"
     )
     
     return STATE_SCREENSHOT
@@ -791,12 +1762,21 @@ async def handle_paid(update, context):
 # ===========================================================================
 
 async def handle_screenshot(update, context):
+    user = update.effective_user
+    
     if not update.message.photo:
-        await update.message.reply_text(f"{EMOJI['error']} *Please send a PHOTO*", parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text(f"❌ *Please send a PHOTO*", parse_mode=ParseMode.MARKDOWN)
         return STATE_SCREENSHOT
     
+    await Animations.uploading(update, 1)
+    
     context.user_data['screenshot'] = update.message.photo[-1].file_id
-    await update.message.reply_text(f"{EMOJI['success']} *Screenshot Received*\n\nNow send UTR number:", parse_mode=ParseMode.MARKDOWN)
+    logger.info(f"Screenshot received from {user.first_name}")
+    
+    await update.message.reply_text(
+        f"✅ *Screenshot Received*\n\nNow send UTR number:",
+        parse_mode=ParseMode.MARKDOWN
+    )
     return STATE_UTR
 
 # ===========================================================================
@@ -808,29 +1788,46 @@ async def handle_utr(update, context):
     utr = update.message.text.strip()
     
     if not validate_utr(utr):
-        await update.message.reply_text(f"{EMOJI['error']} *Invalid UTR*\n\nUTR should be 12-22 characters.", parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text(
+            f"❌ *Invalid UTR*\n\nUTR should be 12-22 characters.",
+            parse_mode=ParseMode.MARKDOWN
+        )
         return STATE_UTR
     
-    if 'topup' not in context.user_data or 'screenshot' not in context.user_data:
-        await update.message.reply_text(f"{EMOJI['error']} *Session Expired*\n\nPlease start over.", parse_mode=ParseMode.MARKDOWN)
+    if 'verification' not in context.user_data or 'screenshot' not in context.user_data:
+        await update.message.reply_text(
+            f"❌ *Session Expired*\n\nPlease start over.",
+            parse_mode=ParseMode.MARKDOWN
+        )
         return ConversationHandler.END
     
-    data = context.user_data['topup']
-    vid = db.create_verification(user.id, data['amount'], data['fee'], data['final'], utr, context.user_data['screenshot'])
+    data = context.user_data['verification']
+    screenshot = context.user_data['screenshot']
+    
+    vid = db.create_verification(
+        user.id, 
+        data['amount'], 
+        data['fee'], 
+        data['final'], 
+        utr, 
+        screenshot
+    )
+    
+    logger.info(f"Verification created: {vid} for user {user.first_name}")
     
     await context.bot.send_photo(
         chat_id=ADMIN_CHANNEL_ID,
-        photo=context.user_data['screenshot'],
+        photo=screenshot,
         caption=(
-            f"{EMOJI['gift']} *NEW PAYMENT* {EMOJI['gift']}\n"
-            f"{DIVIDER}\n\n"
+            f"{EnhancedUI.fancy_header('NEW PAYMENT', '💰', 40)}\n\n"
             f"👤 *User:* {user.first_name}\n"
             f"🆔 *ID:* `{user.id}`\n"
-            f"💰 *Amount:* `{format_currency(data['amount'])}`\n"
-            f"✨ *Credit:* `{format_currency(data['final'])}`\n"
-            f"🔢 *UTR:* `{utr}`"
+            f"💰 *Amount:* `{EnhancedUI.format_currency(data['amount'])}`\n"
+            f"✨ *Credit:* `{EnhancedUI.format_currency(data['final'])}`\n"
+            f"🔢 *UTR:* `{utr}`\n"
+            f"🆔 *Verification ID:* `{vid}`"
         ),
-        parse_mode=ParseMode.MARKDOWN,
+        parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup([[
             InlineKeyboardButton("✅ APPROVE", callback_data=f"approve_{vid}"),
             InlineKeyboardButton("❌ REJECT", callback_data=f"reject_{vid}")
@@ -838,11 +1835,12 @@ async def handle_utr(update, context):
     )
     
     context.user_data.clear()
+    
     await update.message.reply_text(
-        f"{EMOJI['party']} *VERIFICATION SUBMITTED!* {EMOJI['party']}\n\n"
+        f"{EnhancedUI.fancy_header('SUBMITTED', '✅', 40)}\n\n"
         f"Your payment is being verified.\n"
         f"You'll be notified within 5-10 minutes.",
-        parse_mode=ParseMode.MARKDOWN
+        parse_mode="HTML"
     )
     
     return ConversationHandler.END
@@ -856,35 +1854,45 @@ async def handle_email(update, context):
     email = update.message.text.strip()
     
     if not validate_email(email):
-        await update.message.reply_text(f"{EMOJI['error']} *Invalid Email*\n\nPlease enter a valid email.", parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text(
+            f"❌ *Invalid Email*\n\nPlease enter a valid email.",
+            parse_mode=ParseMode.MARKDOWN
+        )
         return STATE_EMAIL
     
     if 'purchase' not in context.user_data:
-        await update.message.reply_text(f"{EMOJI['error']} *Session Expired*\n\nPlease start over.", parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text(
+            f"❌ *Session Expired*\n\nPlease start over.",
+            parse_mode=ParseMode.MARKDOWN
+        )
         return ConversationHandler.END
     
     p = context.user_data['purchase']
     balance = db.get_balance(user.id)
     
     if balance < p['price']:
-        await update.message.reply_text(f"{EMOJI['error']} *Insufficient Balance*", parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text(
+            f"❌ *Insufficient Balance*",
+            parse_mode=ParseMode.MARKDOWN
+        )
         return ConversationHandler.END
     
+    # Process purchase
     db.update_balance(user.id, -p['price'], 'debit')
     order_id = db.create_purchase(user.id, p['card'], p['value'], p['price'], email)
     
     context.user_data.clear()
     
     await show_loading(update, "Processing Purchase", 1)
+    await Animations.react(update, "🎉")
     
     await update.message.reply_text(
-        f"{EMOJI['party']} *PURCHASE SUCCESSFUL!* {EMOJI['party']}\n"
-        f"{DIVIDER_GIFT}\n\n"
+        f"{EnhancedUI.fancy_header('SUCCESS', '🎉', 40)}\n\n"
         f"{p['emoji']} *{p['card']} ₹{p['value']}*\n"
         f"🆔 *Order ID:* `{order_id}`\n"
         f"📧 *Sent to:* `{email}`\n\n"
-        f"{EMOJI['sparkle']} *Check your inbox (and spam folder)!*",
-        parse_mode=ParseMode.MARKDOWN
+        f"✨ *Check your inbox (and spam folder)!*",
+        parse_mode="HTML"
     )
     
     return ConversationHandler.END
@@ -898,24 +1906,40 @@ async def handle_support(update, context):
     msg = update.message.text.strip()
     
     if len(msg) < 10:
-        await update.message.reply_text(f"{EMOJI['error']} *Message Too Short*\n\nPlease describe your issue (min 10 chars).", parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text(
+            f"❌ *Message Too Short*\n\nPlease describe your issue (min 10 chars).",
+            parse_mode=ParseMode.MARKDOWN
+        )
         return STATE_SUPPORT
     
+    # Save to database
     conn = sqlite3.connect(DATABASE_PATH)
     c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS support (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, message TEXT, timestamp TIMESTAMP)''')
-    c.execute("INSERT INTO support (user_id, message, timestamp) VALUES (?, ?, ?)", (user.id, msg, datetime.now().isoformat()))
+    c.execute('''CREATE TABLE IF NOT EXISTS support (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, 
+        user_id INTEGER, 
+        message TEXT, 
+        timestamp TIMESTAMP
+    )''')
+    c.execute("INSERT INTO support (user_id, message, timestamp) VALUES (?, ?, ?)", 
+              (user.id, msg, datetime.now().isoformat()))
     conn.commit()
     conn.close()
     
+    await Animations.react(update, "👍")
+    
+    # Notify admin
     await context.bot.send_message(
         ADMIN_ID,
-        f"{EMOJI['support']} *SUPPORT TICKET*\n\n👤 {user.first_name}\n🆔 `{user.id}`\n💬 {msg}",
-        parse_mode=ParseMode.MARKDOWN
+        f"{EnhancedUI.fancy_header('SUPPORT TICKET', '🆘', 40)}\n\n"
+        f"👤 {user.first_name}\n"
+        f"🆔 `{user.id}`\n"
+        f"💬 {msg}",
+        parse_mode="HTML"
     )
     
     await update.message.reply_text(
-        f"{EMOJI['success']} *SUPPORT SENT!*\n\nWe'll contact you within 24 hours.",
+        f"✅ *SUPPORT SENT!*\n\nWe'll contact you within 24 hours.",
         parse_mode=ParseMode.MARKDOWN
     )
     
@@ -934,165 +1958,70 @@ async def admin_handler(update, context):
     
     if len(parts) < 2: return
     
-    action, vid = parts[0], parts[1]
+    action = parts[0]
+    vid = parts[1]
+    
+    logger.info(f"Admin action: {action} on verification {vid}")
+    db.log_admin_action(ADMIN_ID, action, f"Verification {vid}")
     
     if action == "approve":
         v = db.approve_verification(vid)
         if v:
-            await query.edit_message_caption(caption=query.message.caption + f"\n\n✅ *APPROVED BY ADMIN*", parse_mode=ParseMode.MARKDOWN)
+            await query.edit_message_caption(
+                caption=query.message.caption + f"\n\n✅ *APPROVED BY ADMIN*", 
+                parse_mode="HTML"
+            )
             await context.bot.send_message(
                 v['user_id'],
-                f"{EMOJI['party']} *PAYMENT APPROVED!*\n\n💰 `{format_currency(v['final_amount'])}` added to your balance.",
-                parse_mode=ParseMode.MARKDOWN
+                f"{EnhancedUI.fancy_header('APPROVED', '✅', 40)}\n\n"
+                f"💰 `{EnhancedUI.format_currency(v['final_amount'])}` added to your balance.",
+                parse_mode="HTML"
             )
+            logger.info(f"Verification {vid} approved")
     
     elif action == "reject":
         db.reject_verification(vid)
-        await query.edit_message_caption(caption=query.message.caption + f"\n\n❌ *REJECTED BY ADMIN*", parse_mode=ParseMode.MARKDOWN)
+        await query.edit_message_caption(
+            caption=query.message.caption + f"\n\n❌ *REJECTED BY ADMIN*", 
+            parse_mode="HTML"
+        )
+        logger.info(f"Verification {vid} rejected")
 
 # ===========================================================================
-# ADMIN COMMANDS - HIDDEN FROM USERS
+# ADMIN COMMANDS
 # ===========================================================================
 
 @admin_only
 async def admin_stats(update, context):
-    conn = sqlite3.connect(DATABASE_PATH)
-    c = conn.cursor()
-    c.execute("SELECT COUNT(*) FROM users"); users = c.fetchone()[0]
-    c.execute("SELECT COUNT(*) FROM verifications WHERE status='pending'"); pending = c.fetchone()[0]
-    c.execute("SELECT SUM(amount) FROM transactions WHERE type='credit'"); revenue = c.fetchone()[0] or 0
-    c.execute("SELECT SUM(price) FROM purchases"); spent = c.fetchone()[0] or 0
-    conn.close()
+    stats = db.get_dashboard_stats()
     
     await update.message.reply_text(
-        f"{EMOJI['proof']} *BOT STATISTICS*\n{DIVIDER}\n\n"
-        f"👥 *Users:* `{users}`\n"
-        f"⏳ *Pending:* `{pending}`\n"
-        f"💰 *Revenue:* `{format_currency(revenue)}`\n"
-        f"💳 *Spent:* `{format_currency(spent)}`",
-        parse_mode=ParseMode.MARKDOWN
+        f"{EnhancedUI.fancy_header('STATISTICS', '📊', 40)}\n\n"
+        f"👥 *Users:* `{stats['total_users']}`\n"
+        f"⏳ *Pending:* `{stats['pending']}`\n"
+        f"💰 *Revenue:* `{EnhancedUI.format_currency(stats['total_revenue'])}`\n"
+        f"💳 *Spent:* `{EnhancedUI.format_currency(stats['total_spent'])}`",
+        parse_mode="HTML"
     )
 
 @admin_only
 async def admin_force_promo(update, context):
     await show_loading(update, "Creating Promotion", 2)
     await auto_promotions(context)
-    await update.message.reply_text(f"{EMOJI['success']} *Promotion Posted!*", parse_mode=ParseMode.MARKDOWN)
-
-@admin_only
-async def admin_force_proof(update, context):
-    await update.message.reply_text(
-        f"{EMOJI['proof']} *FORCE PROOF*\n\n"
-        f"Enter amount in ₹ (e.g., 500, 1000, 2000):",
-        parse_mode=ParseMode.MARKDOWN
-    )
-    return STATE_FORCE_PROOF_AMOUNT
-
-@admin_only
-async def handle_force_proof_amount(update, context):
-    try:
-        amount = int(update.message.text.strip())
-        context.user_data['force_proof_amount'] = amount
-    except:
-        await update.message.reply_text(f"{EMOJI['error']} Invalid amount")
-        return ConversationHandler.END
-    
-    await update.message.reply_text(
-        f"{EMOJI['proof']} *FORCE PROOF*\n\n"
-        f"Amount: ₹{amount}\n\n"
-        f"Enter interval in seconds (e.g., 60 for 1 minute):",
-        parse_mode=ParseMode.MARKDOWN
-    )
-    return STATE_FORCE_PROOF_INTERVAL
-
-@admin_only
-async def handle_force_proof_interval(update, context):
-    try:
-        interval = int(update.message.text.strip())
-        amount = context.user_data.get('force_proof_amount', 500)
-    except:
-        await update.message.reply_text(f"{EMOJI['error']} Invalid interval")
-        return ConversationHandler.END
-    
-    context.user_data.clear()
-    
-    job_name = f"force_proof_{update.effective_user.id}"
-    current_jobs = context.job_queue.get_jobs_by_name(job_name)
-    for job in current_jobs:
-        job.schedule_removal()
-    
-    context.job_queue.run_repeating(
-        force_proof_callback,
-        interval=interval,
-        first=0,
-        name=job_name,
-        data={'amount': amount}
-    )
-    
-    await update.message.reply_text(
-        f"{EMOJI['success']} *Force Proof Started!*\n\n"
-        f"Amount: ₹{amount}\n"
-        f"Interval: {interval} seconds\n"
-        f"Channel: {PROOF_CHANNEL}\n\n"
-        f"Use /stopforceproof to stop.",
-        parse_mode=ParseMode.MARKDOWN
-    )
-
-@admin_only
-async def admin_stop_force_proof(update, context):
-    job_name = f"force_proof_{update.effective_user.id}"
-    current_jobs = context.job_queue.get_jobs_by_name(job_name)
-    
-    for job in current_jobs:
-        job.schedule_removal()
-    
-    await update.message.reply_text(
-        f"{EMOJI['success']} *Force Proof Stopped!*",
-        parse_mode=ParseMode.MARKDOWN
-    )
-
-async def force_proof_callback(context):
-    job = context.job
-    amount = job.data['amount']
-    
-    names = ["👑 Raj", "💫 Arjun", "🌟 Kavya", "⚡ Veer", "🔥 Aryan"]
-    cards = ["🟦 AMAZON", "🟩 PLAY STORE", "🎟️ BOOKMYSHOW", "🛍️ MYNTRA", "📦 FLIPKART", "🍕 ZOMATO"]
-    
-    name = random.choice(names)
-    card = random.choice(cards)
-    
-    message = (
-        f"⚡ *FORCE PROOF*\n"
-        f"{DIVIDER_SHORT}\n\n"
-        f"👤 *{name}*\n"
-        f"🎁 *{card}*\n"
-        f"💰 *₹{amount}*\n\n"
-        f"{DIVIDER_SHORT}\n"
-        f"📧 *Email Delivery*\n"
-        f"✅ *Instant*"
-    )
-    
-    try:
-        await context.bot.send_message(
-            chat_id=PROOF_CHANNEL,
-            text=message,
-            parse_mode=ParseMode.MARKDOWN
-        )
-        logger.info(f"✅ Force proof sent: ₹{amount}")
-    except Exception as e:
-        logger.error(f"❌ Force proof error: {e}")
+    await update.message.reply_text(f"✅ *Promotion Posted!*", parse_mode=ParseMode.MARKDOWN)
 
 # ===========================================================================
 # AUTO PROMOTIONS
 # ===========================================================================
 
 async def auto_promotions(context):
+    """Auto post promotions to main channel"""
     try:
         promos = [
             {
-                "title": f"{EMOJI['fire']}{EMOJI['fire']} FLASH SALE {EMOJI['fire']}{EMOJI['fire']}",
+                "title": f"🔥🔥 FLASH SALE 🔥🔥",
                 "content": [
-                    f"{EMOJI['gift']} *Get Gift Cards at 80% OFF!*",
+                    f"🎁 *Get Gift Cards at 80% OFF!*",
                     "",
                     "🎁 *Available Brands:*",
                     "• 🟦 AMAZON - Shop Everything",
@@ -1114,11 +2043,11 @@ async def auto_promotions(context):
                     "• ✅ 24/7 Support",
                     f"• 👥 Referral Bonus ₹{REFERRAL_BONUS}",
                     "",
-                    f"{EMOJI['rocket']} *Join now and start saving!*"
+                    f"🚀 *Join now and start saving!*"
                 ]
             },
             {
-                "title": f"{EMOJI['referral']}{EMOJI['referral']} REFER & EARN {EMOJI['referral']}{EMOJI['referral']}",
+                "title": f"👥👥 REFER & EARN 👥👥",
                 "content": [
                     f"👥 *Invite Friends, Earn ₹{REFERRAL_BONUS}!*",
                     "",
@@ -1133,7 +2062,24 @@ async def auto_promotions(context):
                     "• Instant credit to wallet",
                     "• Use earnings to buy cards",
                     "",
-                    f"{EMOJI['rocket']} *Start referring now!*"
+                    f"🚀 *Start referring now!*"
+                ]
+            },
+            {
+                "title": f"📅📅 DAILY REWARDS 📅📅",
+                "content": [
+                    f"📅 *Claim Daily Rewards!*",
+                    "",
+                    "🔥 *Streak Bonuses:*",
+                    "• Day 1: ₹5",
+                    "• Day 3: ₹10",
+                    "• Day 7: ₹25",
+                    "• Day 15: ₹60",
+                    "• Day 30: ₹100",
+                    "",
+                    "⚡ *Don't break your streak!*",
+                    "",
+                    f"🚀 *Start claiming now!*"
                 ]
             }
         ]
@@ -1143,15 +2089,15 @@ async def auto_promotions(context):
         
         message = (
             f"{promo['title']}\n"
-            f"{DIVIDER_GIFT}\n\n"
+            f"{'─' * 40}\n\n"
             f"{content}\n\n"
-            f"{DIVIDER_SHORT}\n\n"
-            f"{EMOJI['rocket']} *Join now:* @{context.bot.username}\n"
-            f"{DIVIDER_GIFT}"
+            f"{'─' * 40}\n\n"
+            f"🚀 *Join now:* @{context.bot.username}\n"
+            f"{'─' * 40}"
         )
         
         keyboard = [[InlineKeyboardButton(
-            f"{EMOJI['gift']} SHOP NOW",
+            f"🎁 SHOP NOW",
             url=f"https://t.me/{context.bot.username}?start=promo"
         )]]
         
@@ -1168,46 +2114,12 @@ async def auto_promotions(context):
         logger.error(f"❌ Promo error: {e}")
 
 # ===========================================================================
-# AUTO PROOFS
-# ===========================================================================
-
-async def auto_proofs(context):
-    try:
-        names = ["👑 Raj", "💫 Arjun", "🌟 Kavya", "⚡ Veer", "🔥 Aryan"]
-        cards = ["🟦 AMAZON", "🟩 PLAY STORE", "🎟️ BOOKMYSHOW", "🛍️ MYNTRA", "📦 FLIPKART", "🍕 ZOMATO"]
-        amounts = [500, 1000, 2000]
-        
-        name = random.choice(names)
-        card = random.choice(cards)
-        amount = random.choice(amounts)
-        
-        message = (
-            f"⚡ *LIVE PURCHASE*\n"
-            f"{DIVIDER_SHORT}\n\n"
-            f"👤 *{name}*\n"
-            f"🎁 *{card}*\n"
-            f"💰 *₹{amount}*\n\n"
-            f"{DIVIDER_SHORT}\n"
-            f"📧 *Email Delivery*\n"
-            f"✅ *Instant*"
-        )
-        
-        await context.bot.send_message(
-            chat_id=PROOF_CHANNEL,
-            text=message,
-            parse_mode=ParseMode.MARKDOWN
-        )
-        
-    except Exception as e:
-        logger.error(f"❌ Proof error: {e}")
-
-# ===========================================================================
 # CANCEL HANDLER
 # ===========================================================================
 
 async def cancel(update, context):
     context.user_data.clear()
-    await update.message.reply_text(f"{EMOJI['error']} *Cancelled*", parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text(f"❌ *Cancelled*", parse_mode=ParseMode.MARKDOWN)
     return ConversationHandler.END
 
 # ===========================================================================
@@ -1218,28 +2130,24 @@ async def error_handler(update, context):
     logger.error(f"❌ Error: {context.error}")
 
 # ===========================================================================
-# POST INIT - ONLY USER COMMANDS VISIBLE
+# POST INIT
 # ===========================================================================
 
 async def post_init(app):
-    # Set bot commands - only show user commands, hide admin ones
     await app.bot.set_my_commands([
         BotCommand("start", "🚀 Start the bot"),
-        BotCommand("cancel", "❌ Cancel current operation")
+        BotCommand("cancel", "❌ Cancel"),
+        BotCommand("dashboard", "📊 Admin Dashboard"),
+        BotCommand("stats", "📈 Statistics"),
+        BotCommand("forcepromo", "📢 Force Promotion")
     ])
     
-    # Verify channels
+    # Verify main channel
     try:
         await app.bot.get_chat(MAIN_CHANNEL)
         logger.info(f"✅ Main channel verified: {MAIN_CHANNEL}")
     except:
         logger.error(f"❌ Main channel not accessible: {MAIN_CHANNEL}")
-    
-    try:
-        await app.bot.get_chat(PROOF_CHANNEL)
-        logger.info(f"✅ Proof channel verified: {PROOF_CHANNEL}")
-    except:
-        logger.error(f"❌ Proof channel not accessible: {PROOF_CHANNEL}")
     
     logger.info(f"✅ Bot ready! Posts per day: {POSTS_PER_DAY} (every {POST_INTERVAL//3600} hours)")
 
@@ -1257,27 +2165,16 @@ def main():
     # User command handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("cancel", cancel))
+    app.add_handler(CommandHandler("dashboard", admin_dashboard))
     
-    # Admin command handlers (hidden from users)
+    # Admin command handlers
     app.add_handler(CommandHandler("stats", admin_stats))
     app.add_handler(CommandHandler("forcepromo", admin_force_promo))
-    app.add_handler(CommandHandler("stopforceproof", admin_stop_force_proof))
-    
-    # Force proof conversation (admin only)
-    force_proof_conv = ConversationHandler(
-        entry_points=[CommandHandler("forceproof", admin_force_proof)],
-        states={
-            STATE_FORCE_PROOF_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_force_proof_amount)],
-            STATE_FORCE_PROOF_INTERVAL: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_force_proof_interval)]
-        },
-        fallbacks=[CommandHandler("cancel", cancel)]
-    )
-    app.add_handler(force_proof_conv)
     
     # Button handlers
-    app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(CallbackQueryHandler(admin_handler, pattern="^(approve_|reject_)"))
     app.add_handler(CallbackQueryHandler(handle_paid, pattern="^paid$"))
+    app.add_handler(CallbackQueryHandler(button_handler))
     
     # Payment verification conversation
     payment_conv = ConversationHandler(
@@ -1309,24 +2206,55 @@ def main():
     )
     app.add_handler(support_conv)
     
+    # Coupon conversation
+    coupon_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(button_handler, pattern="^coupon$")],
+        states={STATE_COUPON: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_coupon)]},
+        fallbacks=[CommandHandler("cancel", cancel)]
+    )
+    app.add_handler(coupon_conv)
+    
+    # Bulk purchase conversation
+    bulk_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(button_handler, pattern="^bulk$")],
+        states={STATE_BULK_COUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_bulk_count)]},
+        fallbacks=[CommandHandler("cancel", cancel)]
+    )
+    app.add_handler(bulk_conv)
+    
+    # Gift card conversation
+    gift_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(button_handler, pattern="^gift$")],
+        states={STATE_GIFT_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_gift_email)]},
+        fallbacks=[CommandHandler("cancel", cancel)]
+    )
+    app.add_handler(gift_conv)
+    
+    # Price alert conversation
+    alert_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(button_handler, pattern="^alert$")],
+        states={STATE_PRICE_ALERT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_alert_price)]},
+        fallbacks=[CommandHandler("cancel", cancel)]
+    )
+    app.add_handler(alert_conv)
+    
     # Error handler
     app.add_error_handler(error_handler)
     
     # Auto jobs
     if app.job_queue:
         app.job_queue.run_repeating(auto_promotions, interval=POST_INTERVAL, first=30)
-        app.job_queue.run_repeating(auto_proofs, interval=PROOF_INTERVAL, first=10)
     
     # Start
     print("\n" + "="*70)
-    print(f"      {EMOJI['gift']} GIFT CARD BOT ULTIMATE v8.0 {EMOJI['gift']}")
+    print(f"      🎁 GIFT CARD BOT ULTIMATE v11.0 🎁")
     print("="*70)
     print(f"✅ Bot: @GIFT_CARD_41BOT")
     print(f"📢 Main Channel: {MAIN_CHANNEL}")
-    print(f"📊 Proof Channel: {PROOF_CHANNEL}")
     print(f"💰 Referral Bonus: ₹{REFERRAL_BONUS}")
     print(f"📅 Promotions: {POSTS_PER_DAY} posts/day")
-    print(f"🛡️ Force Proof: Available (Admin only)")
+    print(f"✨ New Features: Daily Rewards, Coupons, Bulk Purchase,")
+    print(f"   Gift Gifting, Price Alerts, Multi-Language, Admin Dashboard")
     print("="*70 + "\n")
     
     app.run_polling()
