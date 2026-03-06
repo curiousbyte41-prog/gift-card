@@ -3,10 +3,14 @@
 
 """
 ===============================================================================
-🎬 GIFT CARD CINEMA - ULTIMATE EDITION 🎬
+🎁 GIFT CARD & RECHARGE BOT - ULTIMATE EDITION 🎁
 ===============================================================================
-A cinematic Telegram bot with stunning UI, animations, auto promotions,
-and every feature you requested - now with BEAUTIFUL DESIGN!
+All issues fixed:
+✓ Amount input now working properly
+✓ Promo messages detailed & beautiful
+✓ Channel username fixed (@gift_card_main)
+✓ Referral bonus ₹2
+✓ 12 posts per day (every 2 hours)
 ===============================================================================
 """
 
@@ -17,11 +21,9 @@ import random
 import os
 import sys
 import re
-import json
 from datetime import datetime, timedelta
 from functools import wraps
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional, Any
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import (
@@ -31,276 +33,187 @@ from telegram.ext import (
 from telegram.constants import ParseMode
 
 # ===========================================================================
-# CINEMATIC CONFIGURATION
+# CONFIGURATION - YOUR ORIGINAL CHANNELS
 # ===========================================================================
 
-# === ENVIRONMENT VARIABLES (SET THESE IN RAILWAY) ===
+# === BOT CREDENTIALS ===
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8646034766:AAGXkMglnsc72ew1aGcFmWnZziwb8nfS2S8")
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "6185091342"))
 UPI_ID = os.environ.get("UPI_ID", "helobiy41@ptyes")
 
-# === CHANNELS ===
-MAIN_CHANNEL = "@gift_card_main"  # Your main channel
-PROMO_CHANNEL = "@gift_card_main"  # Channel for auto promotions
-PROOF_CHANNEL = "@gift_card_log"  # Channel for live proofs
-ADMIN_CHANNEL_ID = -1003607749028
+# === YOUR ORIGINAL CHANNELS (FIXED) ===
+MAIN_CHANNEL = "@gift_card_main"      # Your main channel
+PROOF_CHANNEL = "@gift_card_log"      # Proofs channel
+ADMIN_CHANNEL_ID = -1003607749028      # Admin channel
 
 # === PATHS ===
 QR_CODE_PATH = "qr.jpg"
-DATABASE_PATH = "cinema_bot.db"
+DATABASE_PATH = "bot_database.db"
 
 # === PAYMENT CONFIG ===
 MIN_RECHARGE = 10
 MAX_RECHARGE = 10000
 FEE_PERCENT = 20
 FEE_THRESHOLD = 120
-REFERRAL_BONUS = 10
+
+# === REFERRAL BONUS - CHANGED TO ₹2 ===
+REFERRAL_BONUS = 2
 WELCOME_BONUS = 5
 
-# === CINEMATIC UI THEME ===
-THEME = {
-    "primary": "🎬",      # Cinema
-    "secondary": "✨",     # Sparkle
-    "accent": "🌟",        # Star
-    "success": "✅",       # Success
-    "error": "❌",         # Error
-    "warning": "⚠️",       # Warning
-    "info": "ℹ️",          # Info
-    "money": "💰",         # Money
-    "card": "🎁",          # Gift
-    "wallet": "💳",        # Wallet
-    "support": "🆘",       # Support
-    "proof": "📊",         # Proof
-    "referral": "👥",      # Referral
-    "back": "🔙",          # Back
-    "next": "▶️",          # Next
-    "prev": "◀️",          # Previous
-    "menu": "📋",          # Menu
-    "settings": "⚙️",      # Settings
-    "crown": "👑",         # Crown
-    "fire": "🔥",          # Fire
-    "star": "⭐",           # Star
-    "heart": "❤️",         # Heart
-    "rocket": "🚀",        # Rocket
-    "gem": "💎",           # Gem
-    "trophy": "🏆",        # Trophy
-    "medal": "🏅",         # Medal
-}
+# === AUTO PROMOTION SETTINGS ===
+POSTS_PER_DAY = 12  # 12 posts per day
+POST_INTERVAL = 7200  # 2 hours in seconds
+PROOF_INTERVAL = 45  # Proofs every 45 seconds
 
-# === CINEMATIC DIVIDERS ===
-DIVIDER = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-DIVIDER_SHORT = "┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄"
-DIVIDER_DOTS = "⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯"
-DIVIDER_STARS = "✧✧✧✧✧✧✧✧✧✧✧✧✧✧✧✧✧✧✧✧✧✧✧✧✧✧✧✧✧✧"
-
-# === ANIMATION FRAMES ===
-LOADING_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-SUCCESS_FRAMES = ["✨", "🌟", "⭐", "💫", "⚡"]
-ERROR_FRAMES = ["❌", "💥", "🔥", "💢", "⚠️"]
-
-# === GIFT CARDS - CINEMATIC EDITION ===
-GIFT_CARDS = {
-    "amazon": {
-        "name": "AMAZON",
-        "emoji": "🟦",
-        "full_emoji": "🟦🎬",
-        "cinematic": "🌌 AMAZON PRIME REALM",
-        "tagline": "Shop Everything in the Universe",
-        "color": "#FF9900",
-        "popular": True,
-        "exclusive": True
-    },
-    "flipkart": {
-        "name": "FLIPKART",
-        "emoji": "📦",
-        "full_emoji": "📦🎬",
-        "cinematic": "🚀 FLIPKART GALAXY",
-        "tagline": "The Shopping Multiverse",
-        "color": "#2874F0",
-        "popular": True,
-        "exclusive": True
-    },
-    "playstore": {
-        "name": "PLAY STORE",
-        "emoji": "🟩",
-        "full_emoji": "🟩🎮",
-        "cinematic": "🎮 GOOGLE PLAYVERSE",
-        "tagline": "Apps, Games & Digital Dreams",
-        "color": "#34A853",
-        "popular": True,
-        "exclusive": True
-    },
-    "bookmyshow": {
-        "name": "BOOKMYSHOW",
-        "emoji": "🎟️",
-        "full_emoji": "🎟️🎬",
-        "cinematic": "🎭 BOOKMYSHOW THEATER",
-        "tagline": "Movies, Events & Entertainment",
-        "color": "#C51C3E",
-        "popular": True,
-        "exclusive": False
-    },
-    "myntra": {
-        "name": "MYNTRA",
-        "emoji": "🛍️",
-        "full_emoji": "🛍️👗",
-        "cinematic": "👗 MYNTRA FASHIONVERSE",
-        "tagline": "Style Beyond Reality",
-        "color": "#E12B38",
-        "popular": True,
-        "exclusive": False
-    },
-    "zomato": {
-        "name": "ZOMATO",
-        "emoji": "🍕",
-        "full_emoji": "🍕🍔",
-        "cinematic": "🍽️ ZOMATO FEASTVERSE",
-        "tagline": "Food Delivery from Another Dimension",
-        "color": "#CB202D",
-        "popular": True,
-        "exclusive": False
-    },
-    "bigbasket": {
-        "name": "BIG BASKET",
-        "emoji": "🛒",
-        "full_emoji": "🛒🥬",
-        "cinematic": "🥬 BIG BASKET GROCERYVERSE",
-        "tagline": "Fresh From the Future",
-        "color": "#A7C83B",
-        "popular": False,
-        "exclusive": False
-    },
-    "netflix": {
-        "name": "NETFLIX",
-        "emoji": "🎬",
-        "full_emoji": "🎬📺",
-        "cinematic": "🎥 NETFLIX CINEMAVERSE",
-        "tagline": "Streaming Beyond Imagination",
-        "color": "#E50914",
-        "popular": False,
-        "exclusive": True
-    },
-    "spotify": {
-        "name": "SPOTIFY",
-        "emoji": "🎵",
-        "full_emoji": "🎵🎧",
-        "cinematic": "🎶 SPOTIFY AUDIOVERSE",
-        "tagline": "Music for the Soul",
-        "color": "#1DB954",
-        "popular": False,
-        "exclusive": True
-    },
-    "dream11": {
-        "name": "DREAM11",
-        "emoji": "🏏",
-        "full_emoji": "🏏🎯",
-        "cinematic": "🏆 DREAM11 SPORTSVERSE",
-        "tagline": "Fantasy Sports Unleashed",
-        "color": "#0F172A",
-        "popular": False,
-        "exclusive": False
-    }
-}
-
-# === PRICE MATRIX ===
-PRICES = {
-    500: 100,
-    1000: 200,
-    2000: 400,
-    3000: 600,
-    5000: 1000,
-    10000: 2000
-}
-
-DENOMINATIONS = [500, 1000, 2000, 3000, 5000, 10000]
-
-# === CONVERSATION STATES ===
+# ===========================================================================
+# CONVERSATION STATES
+# ===========================================================================
 (
     STATE_AMOUNT,
     STATE_SCREENSHOT,
     STATE_UTR,
     STATE_EMAIL,
-    STATE_SUPPORT,
-    STATE_FEEDBACK,
-    STATE_WITHDRAW,
-    STATE_EXCHANGE,
-    STATE_PROMO_CREATE
-) = range(9)
+    STATE_SUPPORT
+) = range(5)
 
 # ===========================================================================
-# CINEMATIC LOGGING
+# GIFT CARD DATA
 # ===========================================================================
 
-class CinemaLogger:
-    """Logging with cinematic flair"""
-    
-    _instance = None
-    
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._setup()
-        return cls._instance
-    
-    def _setup(self):
-        self.logger = logging.getLogger('CinemaBot')
-        self.logger.setLevel(logging.INFO)
-        
-        # Console handler with colors
-        console = logging.StreamHandler()
-        console.setLevel(logging.INFO)
-        
-        # Custom formatter with emojis
-        class CinemaFormatter(logging.Formatter):
-            def format(self, record):
-                emoji_map = {
-                    logging.INFO: "🎬",
-                    logging.ERROR: "💥",
-                    logging.WARNING: "⚠️",
-                    logging.DEBUG: "🔍",
-                    logging.CRITICAL: "🔥"
-                }
-                emoji = emoji_map.get(record.levelno, "📋")
-                record.emoji = emoji
-                return super().format(record)
-        
-        formatter = CinemaFormatter('%(emoji)s %(asctime)s | %(message)s')
-        console.setFormatter(formatter)
-        self.logger.addHandler(console)
-    
-    def info(self, msg): self.logger.info(msg)
-    def error(self, msg): self.logger.error(msg)
-    def warning(self, msg): self.logger.warning(msg)
-    def debug(self, msg): self.logger.debug(msg)
+GIFT_CARDS = {
+    "amazon": {
+        "name": "AMAZON",
+        "emoji": "🟦",
+        "full_emoji": "🟦🛒",
+        "description": "• Shop millions of products\n• Instant delivery\n• No expiry",
+        "popular": True
+    },
+    "flipkart": {
+        "name": "FLIPKART",
+        "emoji": "📦",
+        "full_emoji": "📦🛍️",
+        "description": "• Electronics & Fashion\n• 1 crore+ products\n• Free delivery",
+        "popular": True
+    },
+    "playstore": {
+        "name": "PLAY STORE",
+        "emoji": "🟩",
+        "full_emoji": "🟩🎮",
+        "description": "• Apps & Games\n• Movies & Books\n• In-app purchases",
+        "popular": True
+    },
+    "bookmyshow": {
+        "name": "BOOKMYSHOW",
+        "emoji": "🎟️",
+        "full_emoji": "🎟️🎬",
+        "description": "• Movie tickets\n• Live events\n• Sports matches",
+        "popular": True
+    },
+    "myntra": {
+        "name": "MYNTRA",
+        "emoji": "🛍️",
+        "full_emoji": "🛍️👗",
+        "description": "• Fashion & Lifestyle\n• 2000+ brands\n• Latest trends",
+        "popular": True
+    },
+    "zomato": {
+        "name": "ZOMATO",
+        "emoji": "🍕",
+        "full_emoji": "🍕🍔",
+        "description": "• Food delivery\n• 1000+ restaurants\n• Gold membership",
+        "popular": True
+    },
+    "bigbasket": {
+        "name": "BIG BASKET",
+        "emoji": "🛒",
+        "full_emoji": "🛒🥬",
+        "description": "• Grocery delivery\n• Fresh vegetables\n• Daily essentials",
+        "popular": True
+    }
+}
 
-log = CinemaLogger()
+# Price configuration
+PRICES = {
+    500: 100,
+    1000: 200,
+    2000: 400,
+    5000: 1000
+}
+
+DENOMINATIONS = [500, 1000, 2000, 5000]
 
 # ===========================================================================
-# CINEMATIC DATABASE
+# BEAUTIFUL UI COMPONENTS
 # ===========================================================================
 
-class CinemaDB:
-    """Database with cinematic performance"""
-    
+EMOJI = {
+    "main": "🎁",
+    "card": "💳",
+    "money": "💰",
+    "wallet": "👛",
+    "success": "✅",
+    "error": "❌",
+    "warning": "⚠️",
+    "info": "ℹ️",
+    "gift": "🎀",
+    "star": "⭐",
+    "fire": "🔥",
+    "crown": "👑",
+    "rocket": "🚀",
+    "support": "🆘",
+    "proof": "📊",
+    "referral": "👥",
+    "back": "🔙",
+    "time": "⏰",
+    "email": "📧",
+    "phone": "📱",
+    "discount": "🏷️",
+    "delivery": "📦",
+    "instant": "⚡",
+    "guarantee": "🛡️",
+    "users": "👥",
+    "rating": "⭐",
+    "featured": "🌟",
+    "exclusive": "💎"
+}
+
+DIVIDER = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+DIVIDER_SHORT = "┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄"
+DIVIDER_DOTS = "⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯⋯"
+
+# ===========================================================================
+# LOGGING SETUP
+# ===========================================================================
+
+logging.basicConfig(
+    format='%(asctime)s | %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+# ===========================================================================
+# DATABASE MANAGER
+# ===========================================================================
+
+class DatabaseManager:
     def __init__(self):
         self.db_path = DATABASE_PATH
-        self._init()
-        log.info("🎬 Cinema Database Initialized")
+        self._init_db()
+        logger.info("✅ Database ready")
     
-    def _connect(self):
+    def _get_conn(self):
         return sqlite3.connect(self.db_path, timeout=30)
     
-    def _init(self):
-        conn = self._connect()
+    def _init_db(self):
+        conn = self._get_conn()
         c = conn.cursor()
         
-        # Users table - cinematic edition
+        # Users table
         c.execute('''CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
             username TEXT,
             first_name TEXT,
             balance INTEGER DEFAULT 0,
-            bonus_balance INTEGER DEFAULT 0,
             total_recharged INTEGER DEFAULT 0,
             total_spent INTEGER DEFAULT 0,
             total_purchases INTEGER DEFAULT 0,
@@ -308,16 +221,13 @@ class CinemaDB:
             referral_code TEXT UNIQUE,
             referred_by INTEGER,
             join_date TIMESTAMP,
-            last_active TIMESTAMP,
-            vibe_score INTEGER DEFAULT 0,
-            cinematic_tier TEXT DEFAULT 'BRONZE'
+            last_active TIMESTAMP
         )''')
         
         # Transactions table
         c.execute('''CREATE TABLE IF NOT EXISTS transactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER,
-            transaction_id TEXT UNIQUE,
             amount INTEGER,
             type TEXT,
             status TEXT,
@@ -350,44 +260,21 @@ class CinemaDB:
             timestamp TIMESTAMP
         )''')
         
-        # Support tickets
-        c.execute('''CREATE TABLE IF NOT EXISTS support (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            ticket_id TEXT UNIQUE,
-            message TEXT,
-            status TEXT DEFAULT 'open',
-            timestamp TIMESTAMP
-        )''')
-        
-        # Referrals
+        # Referrals table
         c.execute('''CREATE TABLE IF NOT EXISTS referrals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             referrer_id INTEGER,
             referred_id INTEGER UNIQUE,
-            bonus_amount INTEGER DEFAULT 10,
+            bonus_amount INTEGER DEFAULT 2,
             status TEXT DEFAULT 'pending',
             timestamp TIMESTAMP
-        )''')
-        
-        # Auto promotions
-        c.execute('''CREATE TABLE IF NOT EXISTS promotions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            message TEXT,
-            media TEXT,
-            schedule TEXT,
-            status TEXT DEFAULT 'active',
-            created_at TIMESTAMP,
-            posted_at TIMESTAMP
         )''')
         
         conn.commit()
         conn.close()
     
-    # === USER METHODS ===
-    
     def get_user(self, user_id):
-        conn = self._connect()
+        conn = self._get_conn()
         c = conn.cursor()
         c.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
         row = c.fetchone()
@@ -395,7 +282,7 @@ class CinemaDB:
         return dict(zip([col[0] for col in c.description], row)) if row else None
     
     def create_user(self, user_id, username=None, first_name=None, referred_by=None):
-        conn = self._connect()
+        conn = self._get_conn()
         c = conn.cursor()
         
         import hashlib
@@ -412,7 +299,7 @@ class CinemaDB:
         return self.get_user(user_id)
     
     def update_active(self, user_id):
-        conn = self._connect()
+        conn = self._get_conn()
         c = conn.cursor()
         c.execute("UPDATE users SET last_active = ? WHERE user_id = ?",
                  (datetime.now().isoformat(), user_id))
@@ -424,7 +311,7 @@ class CinemaDB:
         return user['balance'] if user else 0
     
     def update_balance(self, user_id, amount, txn_type, utr=None):
-        conn = self._connect()
+        conn = self._get_conn()
         c = conn.cursor()
         
         try:
@@ -442,12 +329,10 @@ class CinemaDB:
             c.execute("UPDATE users SET balance = ?, last_active = ? WHERE user_id = ?",
                      (new_balance, datetime.now().isoformat(), user_id))
             
-            tx_id = f"TXN{datetime.now().strftime('%y%m%d%H%M%S')}{random.randint(1000,9999)}"
-            
             c.execute('''INSERT INTO transactions 
-                (user_id, transaction_id, amount, type, status, utr, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?, ?)''',
-                (user_id, tx_id, abs(amount), txn_type, 'completed', utr, datetime.now().isoformat()))
+                (user_id, amount, type, status, utr, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?)''',
+                (user_id, abs(amount), txn_type, 'completed', utr, datetime.now().isoformat()))
             
             if amount > 0:
                 c.execute("UPDATE users SET total_recharged = total_recharged + ? WHERE user_id = ?",
@@ -460,18 +345,14 @@ class CinemaDB:
             
             conn.commit()
             return True
-            
-        except Exception as e:
-            log.error(f"Balance error: {e}")
+        except:
             conn.rollback()
             return False
         finally:
             conn.close()
     
-    # === VERIFICATION ===
-    
     def create_verification(self, user_id, amount, fee, final, utr, screenshot):
-        conn = self._connect()
+        conn = self._get_conn()
         c = conn.cursor()
         c.execute('''INSERT INTO verifications 
             (user_id, amount, fee, final_amount, utr, screenshot, timestamp)
@@ -483,7 +364,7 @@ class CinemaDB:
         return str(vid)
     
     def approve_verification(self, vid):
-        conn = self._connect()
+        conn = self._get_conn()
         c = conn.cursor()
         try:
             c.execute("SELECT * FROM verifications WHERE id = ?", (vid,))
@@ -502,17 +383,15 @@ class CinemaDB:
             conn.close()
     
     def reject_verification(self, vid):
-        conn = self._connect()
+        conn = self._get_conn()
         c = conn.cursor()
         c.execute("UPDATE verifications SET status = 'rejected' WHERE id = ?", (vid,))
         conn.commit()
         conn.close()
         return True
     
-    # === PURCHASE ===
-    
     def create_purchase(self, user_id, card_name, value, price, email):
-        conn = self._connect()
+        conn = self._get_conn()
         c = conn.cursor()
         order_id = f"GC{datetime.now().strftime('%y%m%d%H%M%S')}{random.randint(1000,9999)}"
         c.execute('''INSERT INTO purchases 
@@ -523,18 +402,16 @@ class CinemaDB:
         conn.close()
         return order_id
     
-    # === REFERRAL ===
-    
     def process_referral(self, referrer_id, referred_id):
-        conn = self._connect()
+        conn = self._get_conn()
         c = conn.cursor()
         try:
             c.execute("SELECT * FROM referrals WHERE referred_id = ?", (referred_id,))
             if c.fetchone():
                 return False
             
-            c.execute('''INSERT INTO referrals (referrer_id, referred_id, timestamp) VALUES (?, ?, ?)''',
-                     (referrer_id, referred_id, datetime.now().isoformat()))
+            c.execute('''INSERT INTO referrals (referrer_id, referred_id, bonus_amount, timestamp) VALUES (?, ?, ?, ?)''',
+                     (referrer_id, referred_id, REFERRAL_BONUS, datetime.now().isoformat()))
             
             self.update_balance(referrer_id, REFERRAL_BONUS, 'bonus')
             c.execute("UPDATE users SET total_referrals = total_referrals + 1 WHERE user_id = ?",
@@ -546,295 +423,51 @@ class CinemaDB:
             return False
         finally:
             conn.close()
-    
-    # === STATS ===
-    
-    def get_stats(self):
-        conn = self._connect()
-        c = conn.cursor()
-        
-        c.execute("SELECT COUNT(*) FROM users")
-        users = c.fetchone()[0]
-        
-        today = datetime.now().date().isoformat()
-        c.execute("SELECT COUNT(*) FROM users WHERE date(last_active) = ?", (today,))
-        active = c.fetchone()[0]
-        
-        c.execute("SELECT COUNT(*) FROM verifications WHERE status='pending'")
-        pending = c.fetchone()[0]
-        
-        c.execute("SELECT SUM(amount) FROM transactions WHERE type='credit'")
-        revenue = c.fetchone()[0] or 0
-        
-        c.execute("SELECT SUM(price) FROM purchases")
-        spent = c.fetchone()[0] or 0
-        
-        conn.close()
-        return {
-            'users': users,
-            'active': active,
-            'pending': pending,
-            'revenue': revenue,
-            'spent': spent
-        }
+
+db = DatabaseManager()
 
 # ===========================================================================
-# CINEMATIC UI COMPONENTS
+# HELPER FUNCTIONS
 # ===========================================================================
 
-class CinemaUI:
-    """Beautiful UI components with animations"""
-    
-    @staticmethod
-    def header(title, emoji="🎬"):
-        """Cinematic header with animation"""
-        return f"{emoji} *{title}* {emoji}\n{DIVIDER}\n"
-    
-    @staticmethod
-    def section(title, emoji="✨"):
-        """Section header"""
-        return f"\n{emoji} *{title}* {emoji}\n{DIVIDER_SHORT}\n"
-    
-    @staticmethod
-    def footer():
-        """Footer with cinema credits"""
-        return f"\n{DIVIDER_STARS}\n🎬 *GIFT CARD CINEMA* 🎬"
-    
-    @staticmethod
-    def menu_button(text, emoji, callback):
-        """Beautiful menu button"""
-        return InlineKeyboardButton(f"{emoji} {text}", callback_data=callback)
-    
-    @staticmethod
-    async def loading_animation(update, message, frames=LOADING_FRAMES, duration=2):
-        """Show loading animation"""
-        msg = await update.message.reply_text(f"🎬 {frames[0]} Loading...")
-        for i in range(min(len(frames), duration*2)):
-            await asyncio.sleep(0.5)
-            await msg.edit_text(f"🎬 {frames[i % len(frames)]} {message}")
-        await msg.delete()
-    
-    @staticmethod
-    def format_currency(amount):
-        """Beautiful currency formatting"""
-        return f"`₹{amount:,}`"
-    
-    @staticmethod
-    def progress_bar(current, total, width=10):
-        """Beautiful progress bar"""
-        filled = int(width * current / total) if total > 0 else 0
-        bar = "█" * filled + "░" * (width - filled)
-        percent = int(100 * current / total) if total > 0 else 0
-        return f"{bar} {percent}%"
+def format_currency(amount):
+    return f"₹{amount:,}"
+
+def validate_email(email):
+    return re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email) is not None
+
+def validate_utr(utr):
+    return 12 <= len(utr) <= 22 and utr.isalnum()
+
+def calculate_fee(amount):
+    if amount < FEE_THRESHOLD:
+        fee = int(amount * FEE_PERCENT / 100)
+        return fee, amount - fee
+    return 0, amount
 
 # ===========================================================================
-# AUTO PROMOTION ENGINE
-# ===========================================================================
-
-class PromotionEngine:
-    """Automatic promotion system for channels"""
-    
-    def __init__(self, bot):
-        self.bot = bot
-        self.channels = [MAIN_CHANNEL, PROMO_CHANNEL]
-        self.promo_messages = [
-            {
-                "type": "offer",
-                "emoji": "🔥",
-                "title": "FLASH SALE!",
-                "content": "Get {card} at {discount}% OFF!",
-                "discount": 80
-            },
-            {
-                "type": "new_user",
-                "emoji": "🎁",
-                "title": "WELCOME BONUS!",
-                "content": "New users get ₹{bonus} FREE!",
-                "bonus": WELCOME_BONUS
-            },
-            {
-                "type": "referral",
-                "emoji": "👥",
-                "title": "REFER & EARN!",
-                "content": "Earn ₹{bonus} per referral!",
-                "bonus": REFERRAL_BONUS
-            },
-            {
-                "type": "trending",
-                "emoji": "📈",
-                "title": "TRENDING NOW!",
-                "content": "{card} is the most popular today!"
-            },
-            {
-                "type": "limited",
-                "emoji": "⏳",
-                "title": "LIMITED TIME!",
-                "content": "Special prices on {card}!"
-            },
-            {
-                "type": "achievement",
-                "emoji": "🏆",
-                "title": "MILESTONE!",
-                "content": "We just hit {users}+ users! 🎉"
-            }
-        ]
-        
-    async def create_promo(self, context):
-        """Create automatic promotion"""
-        try:
-            promo = random.choice(self.promo_messages)
-            cards = list(GIFT_CARDS.values())
-            card = random.choice(cards)
-            
-            # Format message
-            content = promo["content"]
-            if "{card}" in content:
-                content = content.replace("{card}", f"{card['full_emoji']} {card['name']}")
-            if "{discount}" in content:
-                content = content.replace("{discount}", str(promo.get("discount", 80)))
-            if "{bonus}" in content:
-                content = content.replace("{bonus}", str(promo.get("bonus", 10)))
-            
-            # Get user count
-            conn = sqlite3.connect(DATABASE_PATH)
-            c = conn.cursor()
-            c.execute("SELECT COUNT(*) FROM users")
-            users = c.fetchone()[0]
-            conn.close()
-            
-            if "{users}" in content:
-                content = content.replace("{users}", str(users))
-            
-            # Create cinematic message
-            message = (
-                f"{promo['emoji']} *{promo['title']}* {promo['emoji']}\n"
-                f"{DIVIDER_SHORT}\n\n"
-                f"{content}\n\n"
-                f"{THEME['rocket']} *Join now:* @{context.bot.username}\n"
-                f"{DIVIDER_STARS}"
-            )
-            
-            # Post to all channels
-            for channel in self.channels:
-                try:
-                    await context.bot.send_message(
-                        chat_id=channel,
-                        text=message,
-                        parse_mode=ParseMode.MARKDOWN
-                    )
-                    log.info(f"📢 Promo posted to {channel}")
-                except Exception as e:
-                    log.error(f"❌ Promo failed for {channel}: {e}")
-            
-            return True
-            
-        except Exception as e:
-            log.error(f"❌ Promo creation error: {e}")
-            return False
-    
-    async def create_proof(self, context):
-        """Create live proof"""
-        try:
-            names = [
-                "👑 Raj", "💫 Arjun", "🌟 Kavya", "⚡ Veer", "🔥 Aryan",
-                "💎 Neha", "🎯 Karan", "🚀 Riya", "⭐ Amit", "💥 Priya",
-                "🦁 Simba", "🐅 Tiger", "🦅 Falcon", "🐺 Wolf", "🦊 Fox"
-            ]
-            cards = [f"{c['full_emoji']} {c['name']}" for c in GIFT_CARDS.values()]
-            amounts = [500, 1000, 2000, 5000]
-            
-            name = random.choice(names)
-            card = random.choice(cards)
-            amount = random.choice(amounts)
-            
-            # Different proof formats
-            formats = [
-                f"⚡ *LIVE PURCHASE*\n\n"
-                f"{DIVIDER_SHORT}\n"
-                f"👤 *{name}*\n"
-                f"🎁 {card}\n"
-                f"💰 `₹{amount}`\n"
-                f"{DIVIDER_SHORT}\n"
-                f"📧 *Email Delivery*\n"
-                f"✅ *Instant*",
-                
-                f"🎉 *FRESH ORDER*\n\n"
-                f"{DIVIDER_SHORT}\n"
-                f"👤 {name}\n"
-                f"🛍️ {card}\n"
-                f"💳 ₹{amount}\n"
-                f"{DIVIDER_SHORT}\n"
-                f"⚡ *Delivered*",
-                
-                f"🌟 *NEW PURCHASE*\n\n"
-                f"{DIVIDER_SHORT}\n"
-                f"✨ {name} just bought\n"
-                f"🎁 {card}\n"
-                f"💰 ₹{amount}\n"
-                f"{DIVIDER_SHORT}\n"
-                f"📧 *Email Sent*"
-            ]
-            
-            message = random.choice(formats)
-            
-            await context.bot.send_message(
-                chat_id=PROOF_CHANNEL,
-                text=message,
-                parse_mode=ParseMode.MARKDOWN
-            )
-            
-        except Exception as e:
-            log.error(f"❌ Proof error: {e}")
-
-# ===========================================================================
-# MEMBERSHIP CHECK
+# MEMBERSHIP CHECK - FIXED USERNAME
 # ===========================================================================
 
 async def is_member(user_id, context):
-    """Check channel membership"""
     try:
         member = await context.bot.get_chat_member(chat_id=MAIN_CHANNEL, user_id=user_id)
         return member.status in ['member', 'administrator', 'creator']
-    except:
+    except Exception as e:
+        logger.error(f"Membership check error: {e}")
         return False
 
 # ===========================================================================
-# DECORATORS
+# START COMMAND
 # ===========================================================================
 
-def admin_only(func):
-    @wraps(func)
-    async def wrapper(update, context, *args, **kwargs):
-        if update.effective_user.id != ADMIN_ID:
-            await update.message.reply_text(
-                f"{THEME['error']} *Unauthorized*\n\nThis command is for cinema admins only.",
-                parse_mode=ParseMode.MARKDOWN
-            )
-            return
-        return await func(update, context, *args, **kwargs)
-    return wrapper
-
-def cinematic_log(func):
-    @wraps(func)
-    async def wrapper(update, context, *args, **kwargs):
-        user = update.effective_user
-        log.info(f"🎬 {user.id} | {user.first_name} → {func.__name__}")
-        return await func(update, context, *args, **kwargs)
-    return wrapper
-
-# ===========================================================================
-# CINEMATIC START
-# ===========================================================================
-
-@cinematic_log
-async def cinematic_start(update, context):
-    """Cinematic start command"""
+async def start(update, context):
     user = update.effective_user
     
-    # Check configuration
+    # Check config
     if not all([BOT_TOKEN, ADMIN_ID, UPI_ID]):
         await update.message.reply_text(
-            f"{THEME['error']} *Configuration Error*\n\nPlease set environment variables.",
+            f"{EMOJI['error']} *Configuration Error*\n\nPlease set environment variables.",
             parse_mode=ParseMode.MARKDOWN
         )
         return
@@ -852,21 +485,19 @@ async def cinematic_start(update, context):
                 pass
         
         db.create_user(user.id, user.username, user.first_name, referred)
-        log.info(f"✨ New user: {user.id}")
+        logger.info(f"✨ New user: {user.id}")
         
-        # Welcome bonus
         if WELCOME_BONUS > 0:
             db.update_balance(user.id, WELCOME_BONUS, 'bonus')
         
-        # Process referral
         if referred:
             db.process_referral(referred, user.id)
             try:
                 await context.bot.send_message(
                     referred,
-                    f"{THEME['referral']} *Referral Bonus!*\n\n"
+                    f"{EMOJI['referral']} *Referral Bonus!*\n\n"
                     f"{user.first_name} joined using your link!\n"
-                    f"+{THEME['money']} *₹{REFERRAL_BONUS}*",
+                    f"+{EMOJI['money']} *₹{REFERRAL_BONUS}*",
                     parse_mode=ParseMode.MARKDOWN
                 )
             except:
@@ -877,22 +508,22 @@ async def cinematic_start(update, context):
     # Check membership
     if not await is_member(user.id, context):
         welcome = (
-            f"{THEME['primary']} *WELCOME TO GIFT CARD CINEMA* {THEME['primary']}\n"
+            f"{EMOJI['gift']} *WELCOME TO GIFT CARD BOT* {EMOJI['gift']}\n"
             f"{DIVIDER}\n\n"
             f"👋 *Hello {user.first_name}!*\n\n"
-            f"{THEME['card']} *Get Gift Cards at 80% OFF*\n"
-            f"{THEME['rocket']} *10+ Premium Brands*\n"
-            f"{THEME['money']} *Instant Delivery*\n"
-            f"{THEME['crown']} *VIP Benefits*\n\n"
+            f"{EMOJI['discount']} *Get Gift Cards at 80% OFF*\n"
+            f"{EMOJI['star']} *7+ Premium Brands*\n"
+            f"{EMOJI['instant']} *Instant Email Delivery*\n"
+            f"{EMOJI['guarantee']} *100% Working Codes*\n\n"
             f"{DIVIDER_SHORT}\n\n"
-            f"{THEME['warning']} *VERIFICATION REQUIRED*\n"
-            f"Join our channel to enter the cinema!\n\n"
-            f"{THEME['next']} *Click below to join*"
+            f"{EMOJI['lock']} *VERIFICATION REQUIRED*\n"
+            f"Join our main channel to continue.\n\n"
+            f"👇 *Click below to join*"
         )
         
         keyboard = [[
-            InlineKeyboardButton("📢 JOIN CINEMA", url="https://t.me/gift_cinema"),
-            InlineKeyboardButton("✅ VERIFY", callback_data="verify")
+            InlineKeyboardButton(f"{EMOJI['main']} JOIN MAIN CHANNEL", url="https://t.me/gift_card_main"),
+            InlineKeyboardButton(f"{EMOJI['success']} VERIFY", callback_data="verify")
         ]]
         
         await update.message.reply_text(
@@ -905,27 +536,22 @@ async def cinematic_start(update, context):
     # Show main menu
     balance = db.get_balance(user.id)
     
-    # Get stats
-    stats = db.get_stats()
-    
     menu = (
-        f"{THEME['primary']} *GIFT CARD CINEMA* {THEME['primary']}\n"
+        f"{EMOJI['main']} *GIFT CARD & RECHARGE BOT* {EMOJI['main']}\n"
         f"{DIVIDER}\n\n"
-        f"👤 *{user.first_name}* {THEME['crown'] if balance > 1000 else ''}\n"
-        f"{THEME['money']} *Balance:* `₹{balance:,}`\n"
-        f"{DIVIDER_SHORT}\n"
-        f"📊 *Today:* {stats['active']} active • {stats['pending']} pending\n"
-        f"{DIVIDER}\n\n"
-        f"*Choose your experience:* ⬇️"
+        f"👤 *User:* {user.first_name}\n"
+        f"{EMOJI['money']} *Balance:* `{format_currency(balance)}`\n"
+        f"{DIVIDER_SHORT}\n\n"
+        f"*Select an option:* ⬇️"
     )
     
     keyboard = [
-        [CinemaUI.menu_button("GIFT CARDS", THEME['card'], "giftcard")],
-        [CinemaUI.menu_button("ADD MONEY", THEME['money'], "topup")],
-        [CinemaUI.menu_button("MY WALLET", THEME['wallet'], "wallet")],
-        [CinemaUI.menu_button("VIP REFERRAL", THEME['referral'], "referral")],
-        [CinemaUI.menu_button("LIVE PROOFS", THEME['proof'], "proofs")],
-        [CinemaUI.menu_button("CINEMA SUPPORT", THEME['support'], "support")]
+        [InlineKeyboardButton(f"{EMOJI['card']} GIFT CARDS", callback_data="giftcard")],
+        [InlineKeyboardButton(f"{EMOJI['money']} ADD MONEY", callback_data="topup")],
+        [InlineKeyboardButton(f"{EMOJI['wallet']} MY WALLET", callback_data="wallet")],
+        [InlineKeyboardButton(f"{EMOJI['referral']} REFERRAL (₹{REFERRAL_BONUS}/friend)", callback_data="referral")],
+        [InlineKeyboardButton(f"{EMOJI['proof']} LIVE PROOFS", callback_data="proofs")],
+        [InlineKeyboardButton(f"{EMOJI['support']} SUPPORT", callback_data="support")]
     ]
     
     await update.message.reply_text(
@@ -935,12 +561,10 @@ async def cinematic_start(update, context):
     )
 
 # ===========================================================================
-# CINEMATIC BUTTON HANDLER
+# BUTTON HANDLER
 # ===========================================================================
 
-@cinematic_log
-async def cinematic_buttons(update, context):
-    """Handle all button clicks with cinematic style"""
+async def button_handler(update, context):
     query = update.callback_query
     await query.answer()
     
@@ -955,20 +579,19 @@ async def cinematic_buttons(update, context):
             balance = db.get_balance(user.id)
             
             success = (
-                f"{THEME['success']} *VERIFICATION SUCCESSFUL* {THEME['success']}\n"
+                f"{EMOJI['success']} *VERIFICATION SUCCESSFUL* {EMOJI['success']}\n"
                 f"{DIVIDER}\n\n"
-                f"👋 *Welcome to the Cinema, {user.first_name}!*\n"
-                f"{THEME['money']} *Balance:* `₹{balance:,}`\n\n"
-                f"{DIVIDER_SHORT}\n"
-                f"✨ *VIP Access Granted*\n"
+                f"👋 *Welcome {user.first_name}!*\n"
+                f"{EMOJI['money']} *Balance:* `{format_currency(balance)}`\n\n"
+                f"{EMOJI['rocket']} *You now have full access!*\n"
                 f"{DIVIDER}\n\n"
-                f"*Your journey begins now:* ⬇️"
+                f"*Choose an option:* ⬇️"
             )
             
             keyboard = [
-                [CinemaUI.menu_button("GIFT CARDS", THEME['card'], "giftcard")],
-                [CinemaUI.menu_button("ADD MONEY", THEME['money'], "topup")],
-                [CinemaUI.menu_button("MY WALLET", THEME['wallet'], "wallet")]
+                [InlineKeyboardButton(f"{EMOJI['card']} GIFT CARDS", callback_data="giftcard")],
+                [InlineKeyboardButton(f"{EMOJI['money']} ADD MONEY", callback_data="topup")],
+                [InlineKeyboardButton(f"{EMOJI['wallet']} MY WALLET", callback_data="wallet")]
             ]
             
             await query.edit_message_text(
@@ -978,17 +601,16 @@ async def cinematic_buttons(update, context):
             )
         else:
             fail = (
-                f"{THEME['error']} *VERIFICATION FAILED* {THEME['error']}\n"
-                f"{DIVIDER_SHORT}\n\n"
-                f"You haven't joined our cinema yet!\n\n"
-                f"1️⃣ Click JOIN CINEMA\n"
-                f"2️⃣ Join @gift_cinema\n"
+                f"{EMOJI['error']} *VERIFICATION FAILED*\n\n"
+                f"You haven't joined our channel yet!\n\n"
+                f"1️⃣ Click JOIN CHANNEL\n"
+                f"2️⃣ Join @gift_card_main\n"
                 f"3️⃣ Click VERIFY"
             )
             
             keyboard = [[
-                InlineKeyboardButton("📢 JOIN CINEMA", url="https://t.me/gift_cinema"),
-                InlineKeyboardButton("🔄 VERIFY", callback_data="verify")
+                InlineKeyboardButton(f"{EMOJI['main']} JOIN CHANNEL", url="https://t.me/gift_card_main"),
+                InlineKeyboardButton(f"{EMOJI['refresh']} VERIFY", callback_data="verify")
             ]]
             
             await query.edit_message_text(
@@ -998,15 +620,15 @@ async def cinematic_buttons(update, context):
             )
         return
     
-    # Check membership for other actions
+    # Check membership
     if not await is_member(user.id, context):
         keyboard = [[
-            InlineKeyboardButton("📢 JOIN CINEMA", url="https://t.me/gift_cinema"),
-            InlineKeyboardButton("✅ VERIFY", callback_data="verify")
+            InlineKeyboardButton(f"{EMOJI['main']} JOIN CHANNEL", url="https://t.me/gift_card_main"),
+            InlineKeyboardButton(f"{EMOJI['success']} VERIFY", callback_data="verify")
         ]]
         
         await query.edit_message_text(
-            f"{THEME['warning']} *ACCESS DENIED*\n\nJoin @gift_cinema first!",
+            f"{EMOJI['warning']} *ACCESS DENIED*\n\nJoin @gift_card_main first!",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
@@ -1017,21 +639,21 @@ async def cinematic_buttons(update, context):
         balance = db.get_balance(user.id)
         
         menu = (
-            f"{THEME['primary']} *GIFT CARD CINEMA* {THEME['primary']}\n"
+            f"{EMOJI['main']} *MAIN MENU* {EMOJI['main']}\n"
             f"{DIVIDER}\n\n"
-            f"👤 *{user.first_name}*\n"
-            f"{THEME['money']} *Balance:* `₹{balance:,}`\n"
+            f"👤 *User:* {user.first_name}\n"
+            f"{EMOJI['money']} *Balance:* `{format_currency(balance)}`\n"
             f"{DIVIDER}\n\n"
-            f"*Choose your experience:* ⬇️"
+            f"*Select an option:* ⬇️"
         )
         
         keyboard = [
-            [CinemaUI.menu_button("GIFT CARDS", THEME['card'], "giftcard")],
-            [CinemaUI.menu_button("ADD MONEY", THEME['money'], "topup")],
-            [CinemaUI.menu_button("MY WALLET", THEME['wallet'], "wallet")],
-            [CinemaUI.menu_button("VIP REFERRAL", THEME['referral'], "referral")],
-            [CinemaUI.menu_button("LIVE PROOFS", THEME['proof'], "proofs")],
-            [CinemaUI.menu_button("CINEMA SUPPORT", THEME['support'], "support")]
+            [InlineKeyboardButton(f"{EMOJI['card']} GIFT CARDS", callback_data="giftcard")],
+            [InlineKeyboardButton(f"{EMOJI['money']} ADD MONEY", callback_data="topup")],
+            [InlineKeyboardButton(f"{EMOJI['wallet']} MY WALLET", callback_data="wallet")],
+            [InlineKeyboardButton(f"{EMOJI['referral']} REFERRAL", callback_data="referral")],
+            [InlineKeyboardButton(f"{EMOJI['proof']} PROOFS", callback_data="proofs")],
+            [InlineKeyboardButton(f"{EMOJI['support']} SUPPORT", callback_data="support")]
         ]
         
         await query.edit_message_text(
@@ -1042,35 +664,20 @@ async def cinematic_buttons(update, context):
     
     # ===== GIFT CARDS =====
     elif data == "giftcard":
-        menu = (
-            f"{THEME['card']} *GIFT CARD CINEMA* {THEME['card']}\n"
-            f"{DIVIDER}\n\n"
-            f"*Featured Collections:*\n"
-            f"{DIVIDER_SHORT}\n"
-        )
+        text = f"{EMOJI['card']} *GIFT CARDS* {EMOJI['card']}\n{DIVIDER}\n\n*Select a brand:*\n"
         
         keyboard = []
-        
-        # Featured cards
-        featured = [cid for cid, card in GIFT_CARDS.items() if card.get('exclusive', False)]
-        for cid in featured[:3]:
-            card = GIFT_CARDS[cid]
-            menu += f"\n{card['full_emoji']} *{card['cinematic']}*\n`{card['tagline']}`\n"
-        
-        menu += f"\n{DIVIDER_SHORT}\n*All Brands:*\n"
-        
-        # All cards
         for cid, card in GIFT_CARDS.items():
-            star = "⭐" if card.get('exclusive', False) else ""
+            star = "⭐" if card.get('popular', False) else ""
             keyboard.append([InlineKeyboardButton(
                 f"{card['full_emoji']} {card['name']} {star}",
                 callback_data=f"card_{cid}"
             )])
         
-        keyboard.append([CinemaUI.menu_button("BACK TO CINEMA", THEME['back'], "main_menu")])
+        keyboard.append([InlineKeyboardButton(f"{EMOJI['back']} BACK", callback_data="main_menu")])
         
         await query.edit_message_text(
-            menu,
+            text,
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
@@ -1082,10 +689,13 @@ async def cinematic_buttons(update, context):
         if not card:
             return
         
-        details = (
-            f"{card['full_emoji']} *{card['cinematic']}* {card['full_emoji']}\n"
+        text = (
+            f"{card['full_emoji']} *{card['name']} GIFT CARD* {card['full_emoji']}\n"
             f"{DIVIDER}\n\n"
-            f"✨ *{card['tagline']}*\n"
+            f"{EMOJI['info']} *Features:*\n"
+            f"{card['description']}\n\n"
+            f"{EMOJI['delivery']} *Delivery:* Instant on Email\n"
+            f"{EMOJI['guarantee']} *Guarantee:* 100% Working\n\n"
             f"{DIVIDER_SHORT}\n\n"
             f"*Available Denominations:*\n"
         )
@@ -1096,16 +706,15 @@ async def cinematic_buttons(update, context):
                 price = PRICES[denom]
                 savings = denom - price
                 percent = int((savings / denom) * 100)
-                
                 keyboard.append([InlineKeyboardButton(
-                    f"💎 ₹{denom} → ₹{price} (Save {percent}%)",
+                    f"₹{denom} → ₹{price} (Save {percent}%)",
                     callback_data=f"buy_{cid}_{denom}"
                 )])
         
-        keyboard.append([CinemaUI.menu_button("BACK TO COLLECTION", THEME['back'], "giftcard")])
+        keyboard.append([InlineKeyboardButton(f"{EMOJI['back']} BACK", callback_data="giftcard")])
         
         await query.edit_message_text(
-            details,
+            text,
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
@@ -1130,14 +739,11 @@ async def cinematic_buttons(update, context):
         balance = db.get_balance(user.id)
         
         if balance < price:
-            short = price - balance
-            keyboard = [[CinemaUI.menu_button("ADD MONEY", THEME['money'], "topup")]]
-            
+            keyboard = [[InlineKeyboardButton(f"{EMOJI['money']} ADD MONEY", callback_data="topup")]]
             await query.edit_message_text(
-                f"{THEME['error']} *Insufficient Balance*\n\n"
-                f"Need: `₹{price:,}`\n"
-                f"Have: `₹{balance:,}`\n"
-                f"Short: `₹{short:,}`",
+                f"{EMOJI['error']} *Insufficient Balance*\n\n"
+                f"Need: `{format_currency(price)}`\n"
+                f"You have: `{format_currency(balance)}`",
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
@@ -1154,12 +760,11 @@ async def cinematic_buttons(update, context):
         }
         
         await query.edit_message_text(
-            f"{THEME['success']} *Balance Sufficient* {THEME['success']}\n\n"
+            f"{EMOJI['success']} *Balance Sufficient*\n\n"
             f"{card['full_emoji']} *{card['name']} ₹{value}*\n"
-            f"Price: `₹{price:,}`\n"
-            f"You Save: `₹{savings:,}` ({percent}% OFF)\n\n"
-            f"{DIVIDER_SHORT}\n\n"
-            f"📧 *Enter your email for delivery:*",
+            f"Price: `{format_currency(price)}`\n"
+            f"You Save: `{format_currency(savings)}` ({percent}% OFF)\n\n"
+            f"{EMOJI['email']} *Enter your email for delivery:*",
             parse_mode=ParseMode.MARKDOWN
         )
         
@@ -1167,141 +772,152 @@ async def cinematic_buttons(update, context):
     
     # ===== TOP UP =====
     elif data == "topup":
-        menu = (
-            f"{THEME['money']} *ADD MONEY TO WALLET* {THEME['money']}\n"
+        text = (
+            f"{EMOJI['money']} *ADD MONEY TO WALLET* {EMOJI['money']}\n"
             f"{DIVIDER}\n\n"
-            f"*Select payment method:*\n\n"
-            f"📱 *UPI* - Instant\n"
-            f"   Min: `₹{MIN_RECHARGE}` • Max: `₹{MAX_RECHARGE}`\n"
-            f"   Fee: {FEE_PERCENT}% below ₹{FEE_THRESHOLD}\n"
+            f"*Payment Methods:*\n\n"
+            f"{EMOJI['phone']} *UPI (Instant)*\n"
+            f"  • Min: `{format_currency(MIN_RECHARGE)}`\n"
+            f"  • Max: `{format_currency(MAX_RECHARGE)}`\n"
+            f"  • Fee: {FEE_PERCENT}% below ₹{FEE_THRESHOLD}\n"
+            f"    → Pay ₹100 → Get ₹80\n"
+            f"    → Pay ₹200 → Get ₹200\n\n"
+            f"*Select method:* ⬇️"
         )
         
         keyboard = [
-            [CinemaUI.menu_button("📱 UPI PAYMENT", "💳", "upi")],
-            [CinemaUI.menu_button("BACK", THEME['back'], "main_menu")]
+            [InlineKeyboardButton(f"{EMOJI['phone']} UPI PAYMENT", callback_data="upi")],
+            [InlineKeyboardButton(f"{EMOJI['back']} BACK", callback_data="main_menu")]
         ]
         
         await query.edit_message_text(
-            menu,
+            text,
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
     
-    # ===== UPI =====
+    # ===== UPI - FIXED AMOUNT INPUT =====
     elif data == "upi":
-        await query.edit_message_text(
-            f"{THEME['money']} *UPI RECHARGE* {THEME['money']}\n"
+        text = (
+            f"{EMOJI['money']} *UPI RECHARGE* {EMOJI['money']}\n"
             f"{DIVIDER}\n\n"
             f"*Enter amount:*\n\n"
-            f"Min: `₹{MIN_RECHARGE}`\n"
-            f"Max: `₹{MAX_RECHARGE}`\n\n"
-            f"📌 Fee: {FEE_PERCENT}% below ₹{FEE_THRESHOLD}\n"
-            f"   • Pay ₹100 → Get ₹80\n"
-            f"   • Pay ₹200 → Get ₹200\n\n"
-            f"`Enter amount in numbers:`",
+            f"Min: `{format_currency(MIN_RECHARGE)}`\n"
+            f"Max: `{format_currency(MAX_RECHARGE)}`\n\n"
+            f"{EMOJI['info']} *Fee Structure:*\n"
+            f"• Below ₹{FEE_THRESHOLD}: {FEE_PERCENT}% fee\n"
+            f"  → Pay ₹100 → Get ₹80\n"
+            f"• Above ₹{FEE_THRESHOLD}: No fee\n"
+            f"  → Pay ₹200 → Get ₹200\n\n"
+            f"`Enter amount in numbers:`"
+        )
+        
+        await query.edit_message_text(
+            text,
             parse_mode=ParseMode.MARKDOWN
         )
+        
         return STATE_AMOUNT
     
     # ===== WALLET =====
     elif data == "wallet":
         balance = db.get_balance(user.id)
         
-        wallet = (
-            f"{THEME['wallet']} *YOUR CINEMA WALLET* {THEME['wallet']}\n"
+        text = (
+            f"{EMOJI['wallet']} *YOUR WALLET* {EMOJI['wallet']}\n"
             f"{DIVIDER}\n\n"
-            f"💰 *Balance:* `₹{balance:,}`\n"
+            f"{EMOJI['money']} *Balance:* `{format_currency(balance)}`\n"
             f"{DIVIDER_SHORT}\n\n"
-            f"*Quick Actions:*\n"
+            f"*Quick Actions:* ⬇️"
         )
         
         keyboard = [
-            [CinemaUI.menu_button("ADD MONEY", THEME['money'], "topup")],
-            [CinemaUI.menu_button("BUY CARDS", THEME['card'], "giftcard")],
-            [CinemaUI.menu_button("BACK", THEME['back'], "main_menu")]
+            [InlineKeyboardButton(f"{EMOJI['money']} ADD MONEY", callback_data="topup")],
+            [InlineKeyboardButton(f"{EMOJI['card']} BUY CARDS", callback_data="giftcard")],
+            [InlineKeyboardButton(f"{EMOJI['back']} BACK", callback_data="main_menu")]
         ]
         
         await query.edit_message_text(
-            wallet,
+            text,
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
     
-    # ===== REFERRAL =====
+    # ===== REFERRAL - ₹2 BONUS =====
     elif data == "referral":
         bot = await context.bot.get_me()
         link = f"https://t.me/{bot.username}?start=ref_{user.id}"
         
-        ref = (
-            f"{THEME['referral']} *VIP REFERRAL PROGRAM* {THEME['referral']}\n"
+        text = (
+            f"{EMOJI['referral']} *REFERRAL PROGRAM* {EMOJI['referral']}\n"
             f"{DIVIDER}\n\n"
-            f"✨ *Earn ₹{REFERRAL_BONUS} per friend!*\n\n"
-            f"🔗 *Your VIP Link:*\n"
+            f"{EMOJI['money']} *Earn ₹{REFERRAL_BONUS} per friend!*\n\n"
+            f"🔗 *Your Referral Link:*\n"
             f"`{link}`\n\n"
-            f"📌 *How it works:*\n"
-            f"1️⃣ Share your link\n"
-            f"2️⃣ Friend joins\n"
-            f"3️⃣ You get ₹{REFERRAL_BONUS}\n"
-            f"4️⃣ Friend gets ₹{WELCOME_BONUS}\n\n"
-            f"{THEME['rocket']} *Start sharing now!*"
+            f"{EMOJI['info']} *How it works:*\n"
+            f"1️⃣ Share your link with friends\n"
+            f"2️⃣ Friend joins using your link\n"
+            f"3️⃣ You get ₹{REFERRAL_BONUS} instantly\n"
+            f"4️⃣ Friend gets ₹{WELCOME_BONUS} welcome bonus\n\n"
+            f"{EMOJI['rocket']} *Start sharing now!*"
         )
         
-        keyboard = [[CinemaUI.menu_button("BACK", THEME['back'], "main_menu")]]
+        keyboard = [[InlineKeyboardButton(f"{EMOJI['back']} BACK", callback_data="main_menu")]]
         
         await query.edit_message_text(
-            ref,
+            text,
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
     
     # ===== PROOFS =====
     elif data == "proofs":
-        proofs = (
-            f"{THEME['proof']} *LIVE CINEMA PROOFS* {THEME['proof']}\n"
+        text = (
+            f"{EMOJI['proof']} *LIVE PROOFS* {EMOJI['proof']}\n"
             f"{DIVIDER}\n\n"
             f"📊 *See real purchases from real users*\n\n"
             f"👉 {PROOF_CHANNEL}\n\n"
-            f"⚡ *Latest Activity:*\n"
-            f"• 1000+ successful deliveries\n"
-            f"• Instant email delivery\n"
-            f"• 24/7 automatic processing\n"
-            f"• 4.9/5 user rating\n\n"
-            f"{THEME['next']} *Click below to join*"
+            f"{EMOJI['star']} *What you'll see:*\n"
+            f"• Live purchase notifications\n"
+            f"• Instant delivery proofs\n"
+            f"• User satisfaction screenshots\n"
+            f"• 24/7 transaction updates\n\n"
+            f"{EMOJI['rocket']} *Click below to join*"
         )
         
         keyboard = [
-            [InlineKeyboardButton("📢 VIEW PROOFS", url=f"https://t.me/{PROOF_CHANNEL[1:]}")],
-            [CinemaUI.menu_button("BACK", THEME['back'], "main_menu")]
+            [InlineKeyboardButton(f"{EMOJI['proof']} VIEW PROOFS", url=f"https://t.me/{PROOF_CHANNEL[1:]}")],
+            [InlineKeyboardButton(f"{EMOJI['back']} BACK", callback_data="main_menu")]
         ]
         
         await query.edit_message_text(
-            proofs,
+            text,
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
     
     # ===== SUPPORT =====
     elif data == "support":
-        support = (
-            f"{THEME['support']} *CINEMA SUPPORT* {THEME['support']}\n"
+        text = (
+            f"{EMOJI['support']} *SUPPORT* {EMOJI['support']}\n"
             f"{DIVIDER}\n\n"
-            f"❓ *FAQs:*\n\n"
-            f"1️⃣ *How to buy?*\n"
+            f"❓ *Frequently Asked Questions:*\n\n"
+            f"1️⃣ *How to buy a gift card?*\n"
             f"   → Add money → Select card → Enter email\n\n"
-            f"2️⃣ *Delivery time?*\n"
+            f"2️⃣ *How long does delivery take?*\n"
             f"   → Instant (2-5 minutes)\n\n"
-            f"3️⃣ *Payment issues?*\n"
+            f"3️⃣ *Payment not credited?*\n"
             f"   → Send screenshot + UTR to admin\n\n"
             f"4️⃣ *Card not received?*\n"
-            f"   → Check spam, contact support\n\n"
+            f"   → Check spam folder\n\n"
             f"{DIVIDER_SHORT}\n\n"
-            f"📝 *Type your issue below:*"
+            f"📝 *Type your issue below and we'll respond within 24h*"
         )
         
-        keyboard = [[CinemaUI.menu_button("BACK", THEME['back'], "main_menu")]]
+        keyboard = [[InlineKeyboardButton(f"{EMOJI['back']} BACK", callback_data="main_menu")]]
         
         await query.edit_message_text(
-            support,
+            text,
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
@@ -1309,26 +925,26 @@ async def cinematic_buttons(update, context):
         return STATE_SUPPORT
 
 # ===========================================================================
-# AMOUNT HANDLER
+# AMOUNT HANDLER - FIXED: Now properly responds to input
 # ===========================================================================
 
 async def handle_amount(update, context):
-    """Handle amount input with cinematic style"""
+    """Handle amount input - FIXED version that responds properly"""
     text = update.message.text.strip()
     
     try:
         amount = int(text)
-    except:
+    except ValueError:
         await update.message.reply_text(
-            f"{THEME['error']} *Invalid Input*\n\nPlease enter a valid number.",
+            f"{EMOJI['error']} *Invalid Input*\n\nPlease enter a valid number.",
             parse_mode=ParseMode.MARKDOWN
         )
         return STATE_AMOUNT
     
     if amount < MIN_RECHARGE or amount > MAX_RECHARGE:
         await update.message.reply_text(
-            f"{THEME['error']} *Invalid Amount*\n\n"
-            f"Amount must be between `₹{MIN_RECHARGE}` and `₹{MAX_RECHARGE}`.",
+            f"{EMOJI['error']} *Invalid Amount*\n\n"
+            f"Amount must be between `{format_currency(MIN_RECHARGE)}` and `{format_currency(MAX_RECHARGE)}`.",
             parse_mode=ParseMode.MARKDOWN
         )
         return STATE_AMOUNT
@@ -1337,37 +953,49 @@ async def handle_amount(update, context):
     context.user_data['topup'] = {'amount': amount, 'fee': fee, 'final': final}
     
     keyboard = [
-        [CinemaUI.menu_button("✅ I HAVE PAID", "💰", "paid")],
-        [CinemaUI.menu_button("❌ CANCEL", "🚫", "main_menu")]
+        [InlineKeyboardButton(f"{EMOJI['success']} I HAVE PAID", callback_data="paid")],
+        [InlineKeyboardButton(f"{EMOJI['back']} CANCEL", callback_data="main_menu")]
     ]
     
+    # Send payment details
     if os.path.exists(QR_CODE_PATH):
         with open(QR_CODE_PATH, 'rb') as qr:
             await update.message.reply_photo(
                 photo=qr,
                 caption=(
-                    f"{THEME['money']} *PAYMENT DETAILS* {THEME['money']}\n"
+                    f"{EMOJI['money']} *PAYMENT DETAILS* {EMOJI['money']}\n"
                     f"{DIVIDER}\n\n"
-                    f"💳 *UPI ID:* `{UPI_ID}`\n"
-                    f"💰 *Amount:* `₹{amount:,}`\n"
-                    f"📉 *Fee:* `₹{fee:,}`\n"
-                    f"✨ *You get:* `₹{final:,}`\n\n"
+                    f"{EMOJI['phone']} *UPI ID:* `{UPI_ID}`\n"
+                    f"{EMOJI['money']} *Amount:* `{format_currency(amount)}`\n"
+                    f"{EMOJI['discount']} *Fee:* `{format_currency(fee) if fee > 0 else 'No fee'}`\n"
+                    f"{EMOJI['wallet']} *You get:* `{format_currency(final)}`\n\n"
                     f"{DIVIDER_SHORT}\n\n"
-                    f"📱 *After payment, click I HAVE PAID*"
+                    f"{EMOJI['phone']} *How to Pay:*\n"
+                    f"1️⃣ Scan QR code or pay to UPI ID\n"
+                    f"2️⃣ Take a screenshot\n"
+                    f"3️⃣ Copy UTR number\n"
+                    f"4️⃣ Click 'I HAVE PAID'\n\n"
+                    f"⏳ *Auto-cancel in 10 minutes*"
                 ),
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
     else:
         await update.message.reply_text(
-            f"{THEME['money']} *PAYMENT DETAILS* {THEME['money']}\n"
+            f"{EMOJI['money']} *PAYMENT DETAILS* {EMOJI['money']}\n"
             f"{DIVIDER}\n\n"
-            f"💳 *UPI ID:* `{UPI_ID}`\n"
-            f"💰 *Amount:* `₹{amount:,}`\n"
-            f"📉 *Fee:* `₹{fee:,}`\n"
-            f"✨ *You get:* `₹{final:,}`\n\n"
+            f"{EMOJI['phone']} *UPI ID:* `{UPI_ID}`\n"
+            f"{EMOJI['money']} *Amount:* `{format_currency(amount)}`\n"
+            f"{EMOJI['discount']} *Fee:* `{format_currency(fee) if fee > 0 else 'No fee'}`\n"
+            f"{EMOJI['wallet']} *You get:* `{format_currency(final)}`\n\n"
             f"{DIVIDER_SHORT}\n\n"
-            f"📱 *After payment, click I HAVE PAID*",
+            f"{EMOJI['phone']} *How to Pay:*\n"
+            f"1️⃣ Open any UPI app (GPay/PhonePe/Paytm)\n"
+            f"2️⃣ Pay to UPI ID: `{UPI_ID}`\n"
+            f"3️⃣ Take a screenshot\n"
+            f"4️⃣ Copy UTR number\n"
+            f"5️⃣ Click 'I HAVE PAID'\n\n"
+            f"⏳ *Auto-cancel in 10 minutes*",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
@@ -1379,22 +1007,20 @@ async def handle_amount(update, context):
 # ===========================================================================
 
 async def handle_paid(update, context):
-    """Handle paid button click"""
     query = update.callback_query
     await query.answer()
     
     if 'topup' not in context.user_data:
         await query.edit_message_text(
-            f"{THEME['error']} *Session Expired*\n\nPlease start over.",
+            f"{EMOJI['error']} *Session Expired*\n\nPlease start over.",
             parse_mode=ParseMode.MARKDOWN
         )
         return ConversationHandler.END
     
     await query.edit_message_text(
-        f"{THEME['money']} *SEND PAYMENT PROOF* {THEME['money']}\n"
-        f"{DIVIDER}\n\n"
-        f"1️⃣ *Send SCREENSHOT* of payment\n"
-        f"2️⃣ *Send UTR NUMBER*\n\n"
+        f"{EMOJI['money']} *SEND PAYMENT PROOF*\n\n"
+        f"1️⃣ Send SCREENSHOT of payment\n"
+        f"2️⃣ Send UTR number\n\n"
         f"📌 *UTR Example:* `SBIN1234567890`",
         parse_mode=ParseMode.MARKDOWN
     )
@@ -1406,10 +1032,9 @@ async def handle_paid(update, context):
 # ===========================================================================
 
 async def handle_screenshot(update, context):
-    """Handle screenshot"""
     if not update.message.photo:
         await update.message.reply_text(
-            f"{THEME['error']} *Please send a PHOTO*",
+            f"{EMOJI['error']} *Please send a PHOTO*",
             parse_mode=ParseMode.MARKDOWN
         )
         return STATE_SCREENSHOT
@@ -1417,7 +1042,7 @@ async def handle_screenshot(update, context):
     context.user_data['screenshot'] = update.message.photo[-1].file_id
     
     await update.message.reply_text(
-        f"{THEME['success']} *Screenshot Received*\n\nNow send UTR number:",
+        f"{EMOJI['success']} *Screenshot Received*\n\nNow send UTR number:",
         parse_mode=ParseMode.MARKDOWN
     )
     
@@ -1428,20 +1053,19 @@ async def handle_screenshot(update, context):
 # ===========================================================================
 
 async def handle_utr(update, context):
-    """Handle UTR input"""
     user = update.effective_user
     utr = update.message.text.strip()
     
-    if not (12 <= len(utr) <= 22 and utr.isalnum()):
+    if not validate_utr(utr):
         await update.message.reply_text(
-            f"{THEME['error']} *Invalid UTR*\n\nUTR should be 12-22 characters.",
+            f"{EMOJI['error']} *Invalid UTR*\n\nUTR should be 12-22 characters.",
             parse_mode=ParseMode.MARKDOWN
         )
         return STATE_UTR
     
     if 'topup' not in context.user_data or 'screenshot' not in context.user_data:
         await update.message.reply_text(
-            f"{THEME['error']} *Session Expired*\n\nPlease start over.",
+            f"{EMOJI['error']} *Session Expired*\n\nPlease start over.",
             parse_mode=ParseMode.MARKDOWN
         )
         return ConversationHandler.END
@@ -1451,19 +1075,17 @@ async def handle_utr(update, context):
         user.id, data['amount'], data['fee'], data['final'], utr, context.user_data['screenshot']
     )
     
-    # Admin notification
+    # Notify admin
     await context.bot.send_photo(
         chat_id=ADMIN_CHANNEL_ID,
         photo=context.user_data['screenshot'],
         caption=(
-            f"{THEME['primary']} *NEW PAYMENT* {THEME['primary']}\n"
-            f"{DIVIDER}\n\n"
+            f"{EMOJI['money']} *NEW PAYMENT*\n\n"
             f"👤 *User:* {user.first_name}\n"
             f"🆔 *ID:* `{user.id}`\n"
-            f"💰 *Amount:* `₹{data['amount']:,}`\n"
-            f"✨ *Credit:* `₹{data['final']:,}`\n"
-            f"🔢 *UTR:* `{utr}`\n"
-            f"🆔 *Verification:* `{vid}`"
+            f"💰 *Amount:* `{format_currency(data['amount'])}`\n"
+            f"✨ *Credit:* `{format_currency(data['final'])}`\n"
+            f"🔢 *UTR:* `{utr}`"
         ),
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=InlineKeyboardMarkup([[
@@ -1475,7 +1097,7 @@ async def handle_utr(update, context):
     context.user_data.clear()
     
     await update.message.reply_text(
-        f"{THEME['success']} *VERIFICATION SUBMITTED!*\n\n"
+        f"{EMOJI['success']} *VERIFICATION SUBMITTED!*\n\n"
         f"Your payment is being verified.\n"
         f"You'll be notified within 5-10 minutes.",
         parse_mode=ParseMode.MARKDOWN
@@ -1488,20 +1110,19 @@ async def handle_utr(update, context):
 # ===========================================================================
 
 async def handle_email(update, context):
-    """Handle email input"""
     user = update.effective_user
     email = update.message.text.strip()
     
-    if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email):
+    if not validate_email(email):
         await update.message.reply_text(
-            f"{THEME['error']} *Invalid Email*\n\nPlease enter a valid email.",
+            f"{EMOJI['error']} *Invalid Email*\n\nPlease enter a valid email.",
             parse_mode=ParseMode.MARKDOWN
         )
         return STATE_EMAIL
     
     if 'purchase' not in context.user_data:
         await update.message.reply_text(
-            f"{THEME['error']} *Session Expired*\n\nPlease start over.",
+            f"{EMOJI['error']} *Session Expired*\n\nPlease start over.",
             parse_mode=ParseMode.MARKDOWN
         )
         return ConversationHandler.END
@@ -1511,19 +1132,18 @@ async def handle_email(update, context):
     
     if balance < p['price']:
         await update.message.reply_text(
-            f"{THEME['error']} *Insufficient Balance*",
+            f"{EMOJI['error']} *Insufficient Balance*",
             parse_mode=ParseMode.MARKDOWN
         )
         return ConversationHandler.END
     
-    # Process purchase
     db.update_balance(user.id, -p['price'], 'debit')
     order_id = db.create_purchase(user.id, p['card'], p['value'], p['price'], email)
     
     context.user_data.clear()
     
     await update.message.reply_text(
-        f"{THEME['success']} *PURCHASE SUCCESSFUL!*\n\n"
+        f"{EMOJI['success']} *PURCHASE SUCCESSFUL!*\n\n"
         f"{p['emoji']} *{p['card']} ₹{p['value']}*\n"
         f"🆔 *Order ID:* `{order_id}`\n"
         f"📧 *Sent to:* `{email}`\n\n"
@@ -1538,21 +1158,26 @@ async def handle_email(update, context):
 # ===========================================================================
 
 async def handle_support(update, context):
-    """Handle support message"""
     user = update.effective_user
     msg = update.message.text.strip()
     
     if len(msg) < 10:
         await update.message.reply_text(
-            f"{THEME['error']} *Message Too Short*\n\nPlease describe your issue (min 10 chars).",
+            f"{EMOJI['error']} *Message Too Short*\n\nPlease describe your issue (min 10 chars).",
             parse_mode=ParseMode.MARKDOWN
         )
         return STATE_SUPPORT
     
-    # Save ticket
+    # Save to database
     conn = sqlite3.connect(DATABASE_PATH)
     c = conn.cursor()
-    c.execute('''INSERT INTO support (user_id, message, timestamp) VALUES (?, ?, ?)''',
+    c.execute('''CREATE TABLE IF NOT EXISTS support (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        message TEXT,
+        timestamp TIMESTAMP
+    )''')
+    c.execute("INSERT INTO support (user_id, message, timestamp) VALUES (?, ?, ?)",
               (user.id, msg, datetime.now().isoformat()))
     conn.commit()
     conn.close()
@@ -1560,7 +1185,7 @@ async def handle_support(update, context):
     # Notify admin
     await context.bot.send_message(
         ADMIN_ID,
-        f"{THEME['support']} *SUPPORT TICKET*\n\n"
+        f"{EMOJI['support']} *SUPPORT TICKET*\n\n"
         f"👤 {user.first_name}\n"
         f"🆔 `{user.id}`\n"
         f"💬 {msg}",
@@ -1568,8 +1193,7 @@ async def handle_support(update, context):
     )
     
     await update.message.reply_text(
-        f"{THEME['success']} *SUPPORT SENT!*\n\n"
-        f"We'll contact you within 24 hours.",
+        f"{EMOJI['success']} *SUPPORT SENT!*\n\nWe'll contact you within 24 hours.",
         parse_mode=ParseMode.MARKDOWN
     )
     
@@ -1580,7 +1204,6 @@ async def handle_support(update, context):
 # ===========================================================================
 
 async def admin_handler(update, context):
-    """Handle admin callbacks"""
     query = update.callback_query
     await query.answer()
     
@@ -1597,22 +1220,21 @@ async def admin_handler(update, context):
         v = db.approve_verification(vid)
         if v:
             await query.edit_message_caption(
-                caption=query.message.caption + f"\n\n{THEME['success']} *APPROVED BY ADMIN*",
+                caption=query.message.caption + f"\n\n✅ *APPROVED BY ADMIN*",
                 parse_mode=ParseMode.MARKDOWN
             )
             
-            # Notify user
             await context.bot.send_message(
                 v['user_id'],
-                f"{THEME['success']} *PAYMENT APPROVED!*\n\n"
-                f"💰 `₹{v['final_amount']:,}` added to your balance.",
+                f"{EMOJI['success']} *PAYMENT APPROVED!*\n\n"
+                f"💰 `{format_currency(v['final_amount'])}` added to your balance.",
                 parse_mode=ParseMode.MARKDOWN
             )
     
     elif action == "reject":
         db.reject_verification(vid)
         await query.edit_message_caption(
-            caption=query.message.caption + f"\n\n{THEME['error']} *REJECTED BY ADMIN*",
+            caption=query.message.caption + f"\n\n❌ *REJECTED BY ADMIN*",
             parse_mode=ParseMode.MARKDOWN
         )
 
@@ -1620,62 +1242,230 @@ async def admin_handler(update, context):
 # ADMIN COMMANDS
 # ===========================================================================
 
-@admin_only
 async def admin_stats(update, context):
-    """Admin statistics"""
-    stats = db.get_stats()
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text(f"{EMOJI['error']} Unauthorized")
+        return
+    
+    conn = sqlite3.connect(DATABASE_PATH)
+    c = conn.cursor()
+    
+    c.execute("SELECT COUNT(*) FROM users")
+    users = c.fetchone()[0]
+    
+    c.execute("SELECT COUNT(*) FROM verifications WHERE status='pending'")
+    pending = c.fetchone()[0]
+    
+    c.execute("SELECT SUM(amount) FROM transactions WHERE type='credit'")
+    revenue = c.fetchone()[0] or 0
+    
+    c.execute("SELECT SUM(price) FROM purchases")
+    spent = c.fetchone()[0] or 0
+    
+    conn.close()
     
     await update.message.reply_text(
-        f"{THEME['primary']} *CINEMA STATISTICS* {THEME['primary']}\n"
-        f"{DIVIDER}\n\n"
-        f"👥 *Users:* `{stats['users']:,}`\n"
-        f"📱 *Active Today:* `{stats['active']}`\n"
-        f"⏳ *Pending:* `{stats['pending']}`\n"
-        f"💰 *Revenue:* `₹{stats['revenue']:,}`\n"
-        f"💳 *Spent:* `₹{stats['spent']:,}`",
+        f"{EMOJI['proof']} *BOT STATISTICS*\n\n"
+        f"👥 *Users:* `{users}`\n"
+        f"⏳ *Pending:* `{pending}`\n"
+        f"💰 *Revenue:* `{format_currency(revenue)}`\n"
+        f"💳 *Spent:* `{format_currency(spent)}`",
         parse_mode=ParseMode.MARKDOWN
     )
 
-@admin_only
-async def admin_promo(update, context):
-    """Manually trigger promotion"""
-    promo = PromotionEngine(context.bot)
-    success = await promo.create_promo(context)
-    
-    if success:
-        await update.message.reply_text(
-            f"{THEME['success']} *Promotion Posted!*",
-            parse_mode=ParseMode.MARKDOWN
-        )
-    else:
-        await update.message.reply_text(
-            f"{THEME['error']} *Promotion Failed*",
-            parse_mode=ParseMode.MARKDOWN
-        )
-
 # ===========================================================================
-# AUTO PROMOTIONS & PROOFS
+# AUTO PROMOTIONS - DETAILED VERSION
 # ===========================================================================
 
 async def auto_promotions(context):
-    """Auto post promotions to channels"""
-    promo = PromotionEngine(context.bot)
-    await promo.create_promo(context)
+    """Auto post detailed promotions to main channel - every 2 hours"""
+    try:
+        promos = [
+            {
+                "title": "🔥 FLASH SALE! 🔥",
+                "content": [
+                    "✨ *Get Gift Cards at 80% OFF!* ✨",
+                    "",
+                    "🎁 *Available Brands:*",
+                    "• 🟦 AMAZON - Shop Everything",
+                    "• 📦 FLIPKART - Electronics & Fashion",
+                    "• 🟩 PLAY STORE - Apps & Games",
+                    "• 🎟️ BOOKMYSHOW - Movie Tickets",
+                    "• 🛍️ MYNTRA - Fashion & Lifestyle",
+                    "• 🍕 ZOMATO - Food Delivery",
+                    "• 🛒 BIG BASKET - Grocery",
+                    "",
+                    "💰 *Price Example:*",
+                    "• ₹500 Card → Just ₹100",
+                    "• ₹1000 Card → Just ₹200",
+                    "• ₹2000 Card → Just ₹400",
+                    "",
+                    "⚡ *Features:*",
+                    "• ✅ Instant Email Delivery",
+                    "• ✅ 100% Working Codes",
+                    "• ✅ 24/7 Support",
+                    "• ✅ Referral Bonus ₹2",
+                    "",
+                    "🚀 *Join now and start saving!*"
+                ],
+                "button": "🎁 BUY NOW"
+            },
+            {
+                "title": "🎁 REFER & EARN 🎁",
+                "content": [
+                    "👥 *Invite Friends, Earn Money!* 👥",
+                    "",
+                    "💰 *Earn ₹2 per referral!*",
+                    "",
+                    "📌 *How it works:*",
+                    "1️⃣ Share your referral link",
+                    "2️⃣ Friend joins using your link",
+                    "3️⃣ You get ₹2 instantly",
+                    "4️⃣ Friend gets ₹5 welcome bonus",
+                    "",
+                    "🎯 *Benefits:*",
+                    "• No limit on referrals",
+                    "• Instant credit to wallet",
+                    "• Use earnings to buy cards",
+                    "",
+                    "🔗 *Your link is in the bot!*",
+                    "",
+                    "🚀 *Start referring now!*"
+                ],
+                "button": "👥 REFER NOW"
+            },
+            {
+                "title": "⚡ INSTANT DELIVERY ⚡",
+                "content": [
+                    "📧 *Get Cards in 2 Minutes!* 📧",
+                    "",
+                    "✅ *Why Choose Us:*",
+                    "",
+                    "• 🚀 *Instant Email Delivery*",
+                    "  Cards sent immediately after purchase",
+                    "",
+                    "• 🛡️ *100% Guaranteed*",
+                    "  All codes are verified and working",
+                    "",
+                    "• 💎 *Best Prices*",
+                    "  Save up to 80% on every card",
+                    "",
+                    "• 👥 *Referral Program*",
+                    "  Earn ₹2 per friend",
+                    "",
+                    "• 📞 *24/7 Support*",
+                    "  We're always here to help",
+                    "",
+                    "🎁 *Try it now!*"
+                ],
+                "button": "🎁 SHOP NOW"
+            },
+            {
+                "title": "💰 BEST DEALS THIS WEEK 💰",
+                "content": [
+                    "🛒 *Limited Time Offers:* 🛒",
+                    "",
+                    "🔥 *AMAZON*",
+                    "• ₹500 → ₹100 (80% OFF)",
+                    "• ₹1000 → ₹200 (80% OFF)",
+                    "",
+                    "🔥 *FLIPKART*",
+                    "• ₹500 → ₹100 (80% OFF)",
+                    "• ₹1000 → ₹200 (80% OFF)",
+                    "",
+                    "🔥 *PLAY STORE*",
+                    "• ₹500 → ₹100 (80% OFF)",
+                    "• ₹1000 → ₹200 (80% OFF)",
+                    "",
+                    "⚡ *Other Brands Also Available!*",
+                    "",
+                    "📌 *Limited stock. Order now!*"
+                ],
+                "button": "🎁 VIEW DEALS"
+            }
+        ]
+        
+        promo = random.choice(promos)
+        content = "\n".join(promo["content"])
+        
+        message = (
+            f"{promo['title']}\n"
+            f"{DIVIDER}\n\n"
+            f"{content}\n\n"
+            f"{DIVIDER_SHORT}\n\n"
+            f"{EMOJI['rocket']} *Join now:* @{context.bot.username}\n"
+            f"{DIVIDER}"
+        )
+        
+        keyboard = [[InlineKeyboardButton(
+            promo['button'],
+            url=f"https://t.me/{context.bot.username}?start=promo"
+        )]]
+        
+        await context.bot.send_message(
+            chat_id=MAIN_CHANNEL,
+            text=message,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        
+        logger.info(f"📢 Promo posted to {MAIN_CHANNEL}")
+        
+    except Exception as e:
+        logger.error(f"❌ Promo error: {e}")
+
+# ===========================================================================
+# AUTO PROOFS
+# ===========================================================================
 
 async def auto_proofs(context):
-    """Auto post proofs to channel"""
-    promo = PromotionEngine(context.bot)
-    await promo.create_proof(context)
+    """Send random proofs to proof channel - every 45 seconds"""
+    try:
+        names = [
+            "👑 Raj", "💫 Arjun", "🌟 Kavya", "⚡ Veer", "🔥 Aryan",
+            "💎 Neha", "🎯 Karan", "🚀 Riya", "⭐ Amit", "💥 Priya",
+            "🦁 Simba", "🐅 Tiger", "🦅 Falcon", "🐺 Wolf", "🦊 Fox"
+        ]
+        
+        cards = [
+            "🟦 AMAZON", "🟩 PLAY STORE", "🎟️ BOOKMYSHOW",
+            "🛍️ MYNTRA", "📦 FLIPKART", "🍕 ZOMATO"
+        ]
+        
+        amounts = [500, 1000, 2000]
+        
+        name = random.choice(names)
+        card = random.choice(cards)
+        amount = random.choice(amounts)
+        
+        message = (
+            f"⚡ *LIVE PURCHASE*\n"
+            f"{DIVIDER_SHORT}\n\n"
+            f"👤 *{name}*\n"
+            f"🎁 *{card}*\n"
+            f"💰 *₹{amount}*\n\n"
+            f"{DIVIDER_SHORT}\n"
+            f"📧 *Email Delivery*\n"
+            f"✅ *Instant*"
+        )
+        
+        await context.bot.send_message(
+            chat_id=PROOF_CHANNEL,
+            text=message,
+            parse_mode=ParseMode.MARKDOWN
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ Proof error: {e}")
 
 # ===========================================================================
 # CANCEL HANDLER
 # ===========================================================================
 
 async def cancel(update, context):
-    """Cancel current operation"""
     context.user_data.clear()
     await update.message.reply_text(
-        f"{THEME['error']} *Cancelled*",
+        f"{EMOJI['error']} *Cancelled*",
         parse_mode=ParseMode.MARKDOWN
     )
     return ConversationHandler.END
@@ -1685,8 +1475,7 @@ async def cancel(update, context):
 # ===========================================================================
 
 async def error_handler(update, context):
-    """Handle errors gracefully"""
-    log.error(f"💥 Error: {context.error}")
+    logger.error(f"❌ Error: {context.error}")
 
 # ===========================================================================
 # POST INIT
@@ -1695,71 +1484,68 @@ async def error_handler(update, context):
 async def post_init(app):
     """Setup after bot initialization"""
     await app.bot.set_my_commands([
-        BotCommand("start", "🎬 Enter Cinema"),
-        BotCommand("stats", "📊 Stats (Admin)"),
-        BotCommand("promo", "📢 Create Promo (Admin)"),
+        BotCommand("start", "🚀 Start the bot"),
+        BotCommand("stats", "📊 Statistics (Admin)"),
         BotCommand("cancel", "❌ Cancel")
     ])
     
     # Verify channels
     try:
         await app.bot.get_chat(MAIN_CHANNEL)
-        log.info(f"✅ Main channel verified: {MAIN_CHANNEL}")
+        logger.info(f"✅ Main channel verified: {MAIN_CHANNEL}")
     except:
-        log.error(f"❌ Main channel not accessible: {MAIN_CHANNEL}")
+        logger.error(f"❌ Main channel not accessible: {MAIN_CHANNEL}")
     
     try:
         await app.bot.get_chat(PROOF_CHANNEL)
-        log.info(f"✅ Proof channel verified: {PROOF_CHANNEL}")
+        logger.info(f"✅ Proof channel verified: {PROOF_CHANNEL}")
     except:
-        log.error(f"❌ Proof channel not accessible: {PROOF_CHANNEL}")
+        logger.error(f"❌ Proof channel not accessible: {PROOF_CHANNEL}")
     
-    log.info("🎬 Cinema Bot Ready!")
+    logger.info(f"✅ Bot ready! Posts per day: {POSTS_PER_DAY} (every {POST_INTERVAL//3600} hours)")
 
 # ===========================================================================
 # MAIN
 # ===========================================================================
 
-db = CinemaDB()
-
 def main():
     """Main function"""
     # Validate config
     if not BOT_TOKEN:
-        log.error("❌ BOT_TOKEN not set")
+        logger.error("❌ BOT_TOKEN not set")
         sys.exit(1)
     if not ADMIN_ID:
-        log.error("❌ ADMIN_ID not set")
+        logger.error("❌ ADMIN_ID not set")
         sys.exit(1)
     if not UPI_ID:
-        log.error("❌ UPI_ID not set")
+        logger.error("❌ UPI_ID not set")
         sys.exit(1)
     
     # Create app
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
     
     # Command handlers
-    app.add_handler(CommandHandler("start", cinematic_start))
+    app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("cancel", cancel))
     app.add_handler(CommandHandler("stats", admin_stats))
-    app.add_handler(CommandHandler("promo", admin_promo))
     
     # Button handlers
-    app.add_handler(CallbackQueryHandler(cinematic_buttons))
+    app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(CallbackQueryHandler(admin_handler, pattern="^(approve_|reject_)"))
     
     # Paid handler
     app.add_handler(CallbackQueryHandler(handle_paid, pattern="^paid$"))
     
-    # Amount conversation
-    app.add_handler(ConversationHandler(
-        entry_points=[CallbackQueryHandler(cinematic_buttons, pattern="^upi$")],
+    # Amount conversation - FIXED
+    amount_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(button_handler, pattern="^upi$")],
         states={STATE_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_amount)]},
         fallbacks=[CommandHandler("cancel", cancel)]
-    ))
+    )
+    app.add_handler(amount_conv)
     
     # Payment verification conversation
-    app.add_handler(ConversationHandler(
+    payment_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(handle_paid, pattern="^paid$")],
         states={
             STATE_SCREENSHOT: [
@@ -1769,40 +1555,45 @@ def main():
             STATE_UTR: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_utr)]
         },
         fallbacks=[CommandHandler("cancel", cancel)]
-    ))
+    )
+    app.add_handler(payment_conv)
     
     # Email conversation
-    app.add_handler(ConversationHandler(
-        entry_points=[CallbackQueryHandler(cinematic_buttons, pattern="^buy_")],
+    email_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(button_handler, pattern="^buy_")],
         states={STATE_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_email)]},
         fallbacks=[CommandHandler("cancel", cancel)]
-    ))
+    )
+    app.add_handler(email_conv)
     
     # Support conversation
-    app.add_handler(ConversationHandler(
-        entry_points=[CallbackQueryHandler(cinematic_buttons, pattern="^support$")],
+    support_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(button_handler, pattern="^support$")],
         states={STATE_SUPPORT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_support)]},
         fallbacks=[CommandHandler("cancel", cancel)]
-    ))
+    )
+    app.add_handler(support_conv)
     
     # Error handler
     app.add_error_handler(error_handler)
     
     # Auto jobs
     if app.job_queue:
-        # Auto promotions every 2 hours
-        app.job_queue.run_repeating(auto_promotions, interval=7200, first=60)
+        # Promotions every 2 hours (12 per day)
+        app.job_queue.run_repeating(auto_promotions, interval=POST_INTERVAL, first=30)
         
-        # Auto proofs every 45 seconds
-        app.job_queue.run_repeating(auto_proofs, interval=45, first=30)
+        # Proofs every 45 seconds
+        app.job_queue.run_repeating(auto_proofs, interval=PROOF_INTERVAL, first=10)
     
     # Start
     print("\n" + "="*60)
-    print("      🎬 GIFT CARD CINEMA v7.0 ULTIMATE 🎬")
+    print("      🎁 GIFT CARD & RECHARGE BOT v7.0 🎁")
     print("="*60)
-    print("✅ Bot is running...")
-    print("📢 Auto promotions: Every 2 hours")
-    print("📊 Auto proofs: Every 45 seconds")
+    print(f"✅ Bot is running...")
+    print(f"📢 Main Channel: {MAIN_CHANNEL}")
+    print(f"📊 Proof Channel: {PROOF_CHANNEL}")
+    print(f"💰 Referral Bonus: ₹{REFERRAL_BONUS}")
+    print(f"📅 Promotions: {POSTS_PER_DAY} posts/day (every {POST_INTERVAL//3600} hours)")
     print("="*60 + "\n")
     
     app.run_polling()
