@@ -1928,7 +1928,8 @@ async def handle_paid(update, context):
         'fee': data['fee'],
         'final': data['final']
     }
-        await query.edit_message_text(
+    
+    await query.message.reply_text(
         f"{EnhancedUI.fancy_header('SEND PROOF', '📤', 40)}\n\n"
         f"Amount: `{EnhancedUI.format_currency(data['amount'])}`\n"
         f"You get: `{EnhancedUI.format_currency(data['final'])}`\n\n"
