@@ -1,7 +1,6 @@
-at > railway.json << 'EOF'
+
 {
   "build": {
     "builder": "DOCKERFILE"
   }
 }
-EOF
