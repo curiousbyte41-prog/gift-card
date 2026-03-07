@@ -946,13 +946,13 @@ def add_back_button(keyboard, callback_data="main_menu"):
 LOADING_FRAMES = ["🎁", "🎀", "✨", "⭐", "🌟", "💫", "⚡", "💎"]
 
 async def show_loading(update, message_text="Processing", duration=2):
-    """Show beautiful loading animation"""
-    msg = await update.message.reply_text(f"⏳ *{message_text}*", parse_mode=ParseMode.MARKDOWN)
-    for i in range(duration * 2):
-        frame = LOADING_FRAMES[i % len(LOADING_FRAMES)]
-        await asyncio.sleep(0.5)
-        await msg.edit_text(f"{frame} *{message_text}{'.' * ((i % 3) + 1)}*", parse_mode=ParseMode.MARKDOWN)
-    await msg.delete()
+    """Show safe loading animation"""
+    try:
+        msg = await update.message.reply_text(f"⏳ {message_text}")
+        await asyncio.sleep(duration)
+        await msg.delete()
+    except Exception as e:
+        logger.error(f"Loading error: {e}")
 
 # ===========================================================================
 # MEMBERSHIP CHECK
@@ -987,47 +987,102 @@ def admin_only(func):
 
 async def start(update, context):
     user = update.effective_user
-    
-    # React to message
+
     # await Animations.react(update, "👋")
-    
+
     if not all([BOT_TOKEN, ADMIN_ID, UPI_ID]):
-        await update.message.reply_text(f"❌ *Configuration Error*", parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text("❌ Configuration Error")
         return
-    
-# Create user in database
-db_user = db.get_user(user.id)
-if not db_user:
-    referred = None
-    if context.args and len(context.args) > 0 and context.args[0].startswith('ref_'):
-        try:
-            referred = int(context.args[0].replace('ref_', ''))
-            if referred == user.id:
-                referred = None
-        except:
-            pass
 
-    db.create_user(user.id, user.username, user.first_name, referred)
+    # Create user in database
+    db_user = db.get_user(user.id)
 
-    if WELCOME_BONUS > 0:
-        db.update_balance(user.id, WELCOME_BONUS, 'bonus')
+    if not db_user:
+        referred = None
+        if context.args and len(context.args) > 0 and context.args[0].startswith('ref_'):
+            try:
+                referred = int(context.args[0].replace('ref_', ''))
+                if referred == user.id:
+                    referred = None
+            except:
+                pass
 
-    if referred:
-        db.process_referral(referred, user.id)
-        try:
-            await context.bot.send_message(
-                referred,
-                f"👥 *Referral Bonus!*\n\n{user.first_name} joined!\n+₹{REFERRAL_BONUS}",
-                parse_mode=ParseMode.MARKDOWN
-            )
-        except:
-            pass
+        db.create_user(user.id, user.username, user.first_name, referred)
 
-    db_user = db.get_user(user.id) or {"total_purchases": 0}
+        if WELCOME_BONUS > 0:
+            db.update_balance(user.id, WELCOME_BONUS, 'bonus')
+
+        if referred:
+            db.process_referral(referred, user.id)
+            try:
+                await context.bot.send_message(
+                    referred,
+                    f"👥 Referral Bonus!\n\n{user.first_name} joined!\n+₹{REFERRAL_BONUS}"
+                )
+            except:
+                pass
+
+        db_user = db.get_user(user.id)
+
     db_user = db_user or {"total_purchases": 0}
-    # Show typing indicator
+
+    db.update_active(user.id)
+
     await Animations.typing(update, 1)
-    
+
+    is_member = await check_membership(user.id, context)
+
+    if not is_member:
+        welcome = (
+            f"{EnhancedUI.fancy_header('WELCOME', '🎁', 40)}\n\n"
+            f"Hello {user.first_name}!\n\n"
+            f"Join our main channel to use this bot.\n\n"
+            f"Click below to join and verify."
+        )
+        keyboard = [[
+            InlineKeyboardButton("📢 JOIN MAIN CHANNEL", url="https://t.me/gift_card_main"),
+            InlineKeyboardButton("✅ I HAVE JOINED", callback_data="verify")
+        ]]
+        await update.message.reply_text(
+            welcome,
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        return
+
+    await show_loading(update, "Loading Gift Cards", 1)
+
+    badge = EnhancedUI.user_badge(db_user.get('total_purchases', 0))
+    balance = db.get_balance(user.id)
+
+    menu = (
+        f"{EnhancedUI.fancy_header('MAIN MENU', '🎁', 40)}\n\n"
+        f"👤 User: {user.first_name} {badge}\n"
+        f"💰 Balance: {EnhancedUI.format_currency(balance)}\n"
+        f"📊 Purchases: {db_user.get('total_purchases', 0)}\n"
+        f"{EnhancedUI.progress_bar(db_user.get('total_purchases', 0), 100, 15)}\n\n"
+        f"Select an option:"
+    )
+
+    keyboard = [
+        [InlineKeyboardButton("🎁 GIFT CARDS", callback_data="giftcard")],
+        [InlineKeyboardButton("💰 ADD MONEY", callback_data="topup")],
+        [InlineKeyboardButton("👛 MY WALLET", callback_data="wallet")],
+        [InlineKeyboardButton(f"👥 REFERRAL (₹{REFERRAL_BONUS}/friend)", callback_data="referral")],
+        [InlineKeyboardButton("📅 DAILY REWARD", callback_data="daily")],
+        [InlineKeyboardButton("🏷️ COUPONS", callback_data="coupon")],
+        [InlineKeyboardButton("📦 BULK PURCHASE", callback_data="bulk")],
+        [InlineKeyboardButton("🎁 SEND GIFT", callback_data="gift")],
+        [InlineKeyboardButton("🔔 PRICE ALERT", callback_data="alert")],
+        [InlineKeyboardButton("🌐 LANGUAGE", callback_data="language")],
+        [InlineKeyboardButton("🆘 SUPPORT", callback_data="support")]
+    ]
+
+    await update.message.reply_text(
+        menu,
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
     # Check channel membership
     is_member = await check_membership(user.id, context)
     
@@ -1519,7 +1574,7 @@ async def button_handler(update, context):
     db.update_active(user.id)
     
     # React to button click
-    await Animations.react(update, "👆")
+  # await Animations.react(update, "👆")
     
     # ===== VERIFY BUTTON =====
     if data == "verify":
@@ -2037,7 +2092,7 @@ async def handle_email(update, context):
     context.user_data.clear()
     
     await show_loading(update, "Processing Purchase", 1)
-    await Animations.react(update, "🎉")
+    # await Animations.react(update, "🎉")
     
     keyboard = []
     add_back_button(keyboard, "main_menu")
@@ -2086,7 +2141,7 @@ async def handle_support(update, context):
     conn.commit()
     conn.close()
     
-    await Animations.react(update, "👍")
+    # await Animations.react(update, "👍")
     
     # Notify admin
     await context.bot.send_message(
