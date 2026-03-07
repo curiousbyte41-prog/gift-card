@@ -1298,7 +1298,7 @@ async def daily_reward(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ─────────────────────────────────────────────────────────────
-# PAYMENT FLOW HANDLERS
+# PAYMENT FLOW HANDLERS - FIXED VERSION
 # ─────────────────────────────────────────────────────────────
 async def handle_paid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Entry point triggered by 'paid' callback inside ConversationHandler"""
@@ -1306,11 +1306,15 @@ async def handle_paid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     user = update.effective_user
 
+    logger.info(f"💰 Paid button clicked by user {user.id}")
+
     recharge = context.user_data.get("recharge")
     if not recharge:
+        # Session expired - simply go back to topup menu without error
         await query.edit_message_text(
-            "❌ Session expired. Please start again.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="topup")]]),
+            "⏰ Session expired. Please select amount again.",
+            reply_markup=amount_keyboard(),
+            parse_mode=ParseMode.MARKDOWN
         )
         return ConversationHandler.END
 
@@ -1326,7 +1330,8 @@ async def handle_paid(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle screenshot upload"""
-    print("STEP 1: Screenshot received")
+    user = update.effective_user
+    logger.info(f"📸 Screenshot received from user {user.id}")
 
     if not update.message.photo:
         await update.message.reply_text(
@@ -1337,7 +1342,7 @@ async def handle_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     photo = update.message.photo[-1]
     context.user_data["screenshot_file_id"] = str(photo.file_id)
-    print(f"STEP 2: Screenshot stored: {photo.file_id[:20]}...")
+    logger.info(f"✅ Screenshot stored: {photo.file_id[:20]}...")
 
     await update.message.reply_text(
         "✅ Screenshot received!\n\n"
@@ -1349,12 +1354,13 @@ async def handle_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_utr(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle UTR number input - critical function"""
-    print("STEP 1: UTR received")
+    """Handle UTR number input"""
     utr = update.message.text.strip().upper() if update.message.text else ""
     user = update.effective_user
+    
+    logger.info(f"🔤 UTR received from user {user.id}: {utr[:10]}...")
 
-    # Step 2: Validate UTR
+    # Validate UTR
     if not validate_utr(utr):
         await update.message.reply_text(
             "❌ Invalid UTR format!\n"
@@ -1362,44 +1368,48 @@ async def handle_utr(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Please try again:"
         )
         return STATE_UTR
-    print("STEP 2: Validation passed")
 
-    # Step 3: Check session data
+    # Check session data
     recharge = context.user_data.get("recharge")
     screenshot_file_id = context.user_data.get("screenshot_file_id")
     if not recharge or not screenshot_file_id:
-        await update.message.reply_text("❌ Session expired. Please start again with /start")
+        # Session expired - go to main menu without error
+        keyboard = main_menu_keyboard()
+        await update.message.reply_text(
+            "⏰ Session expired. Please start again.",
+            reply_markup=keyboard
+        )
         return ConversationHandler.END
-    print("STEP 3: Session data OK")
 
-    # Step 4: Extract data
+    # Extract data
     amount = recharge["amount"]
     fee = recharge["fee"]
     final = recharge["final"]
-    print(f"STEP 4: Data extracted - amount={amount}, fee={fee}, final={final}")
 
-    # Step 5: Check duplicate UTR
+    # Check duplicate UTR
     if db.is_utr_duplicate(utr):
         await update.message.reply_text(
             "❌ This UTR has already been submitted.\n"
-            "Please check and submit the correct UTR."
+            "Please check and try again with a different UTR."
         )
-        return ConversationHandler.END
-    print("STEP 5: UTR unique")
+        return STATE_UTR
 
-    # Step 6: Create verification in database
+    # Create verification
     try:
         db.create_verification(user.id, amount, fee, final, utr, screenshot_file_id)
-        print("STEP 6: Verification created")
+        logger.info(f"✅ Verification created for user {user.id}")
     except Exception as e:
-        print(f"DB Error: {e}")
-        await update.message.reply_text("❌ Database error. Please try again later.")
+        logger.error(f"DB Error: {e}")
+        await update.message.reply_text(
+            "❌ Database error. Please try again later."
+        )
         return ConversationHandler.END
 
-    # Step 7: Get verification ID and send to admin
+    # Get verification ID
     ver = db.execute("SELECT id FROM verifications WHERE utr=?", (utr,), fetchone=True)
     ver_id = ver["id"] if ver else 0
 
+    # Send to admin channel
     try:
         admin_text = (
             f"💳 *NEW PAYMENT VERIFICATION*\n"
@@ -1423,27 +1433,24 @@ async def handle_utr(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=admin_keyboard,
             parse_mode=ParseMode.MARKDOWN
         )
-        print("STEP 7: Admin channel sent")
+        logger.info("✅ Admin notification sent")
     except Exception as e:
-        print(f"Admin channel error: {e}")
         logger.error(f"Admin channel error: {e}")
 
-    # Step 8: Clear session data
+    # Clear session data
     context.user_data.pop("recharge", None)
     context.user_data.pop("screenshot_file_id", None)
-    print("STEP 8: Session cleared")
 
-    # Step 9: Confirm to user (plain text, no markdown)
+    # SUCCESS - No error message, just success!
     await update.message.reply_text(
-        f"✅ Payment submitted successfully!\n\n"
+        f"✅ *PAYMENT SUBMITTED SUCCESSFULLY!*\n\n"
         f"Amount: ₹{amount}\n"
         f"UTR: {utr}\n\n"
-        f"Your payment is under review. You will be notified once approved (usually within 30 minutes).\n\n"
+        f"Your payment is under review. You will be notified once approved.\n\n"
         f"Thank you for using Gift Card Bot! 🎁"
     )
-    print("STEP 9: User confirmed")
+    
     return ConversationHandler.END
-
 
 # ─────────────────────────────────────────────────────────────
 # EMAIL HANDLER (for purchases)
