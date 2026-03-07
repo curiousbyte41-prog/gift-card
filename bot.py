@@ -2022,7 +2022,7 @@ async def handle_utr(update, context):
     f"Credit: {data['final']}\n"
     f"UTR: {utr}\n"
     f"Verification ID: {vid}"
-)
+),
         reply_markup=InlineKeyboardMarkup([[
             InlineKeyboardButton("✅ APPROVE", callback_data=f"approve_{vid}"),
             InlineKeyboardButton("❌ REJECT", callback_data=f"reject_{vid}")
