@@ -43,7 +43,7 @@ from telegram.constants import ParseMode
 # CONFIGURATION
 # ===========================================================================
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8646034766:AAGXkMglnsc72ew1aGcFmWnZziwb8nfS2S8")
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "6185091342"))
 UPI_ID = os.environ.get("UPI_ID", "helobiy41@ptyes")
 
