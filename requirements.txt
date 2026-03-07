@@ -1,5 +1,21 @@
+# Core Telegram Bot
 python-telegram-bot==20.7
-pandas
-qrcode
-Pillow
-python-dotenv
+
+# Data Processing
+pandas==2.0.3
+
+# QR Code Generation
+qrcode[pil]==7.4.2
+Pillow==10.0.0
+
+# Environment Variables
+python-dotenv==1.0.0
+
+# HTTP Requests
+requests==2.31.0
+
+# Async Support
+aiohttp==3.8.5
+
+# Terminal Styling
+colorama==0.4.6
