@@ -2014,16 +2014,15 @@ async def handle_utr(update, context):
     await context.bot.send_photo(
         chat_id=ADMIN_CHANNEL_ID,
         photo=screenshot,
-        caption=(
-            f"{EnhancedUI.fancy_header('NEW PAYMENT', '💰', 40)}\n\n"
-            f"👤 *User:* {user.first_name}\n"
-            f"🆔 *ID:* `{user.id}`\n"
-            f"💰 *Amount:* `{EnhancedUI.format_currency(data['amount'])}`\n"
-            f"✨ *Credit:* `{EnhancedUI.format_currency(data['final'])}`\n"
-            f"🔢 *UTR:* `{utr}`\n"
-            f"🆔 *Verification ID:* `{vid}`"
-        ),
-        parse_mode="HTML",
+     caption=(
+    f"NEW PAYMENT\n\n"
+    f"User: {user.first_name}\n"
+    f"ID: {user.id}\n"
+    f"Amount: {data['amount']}\n"
+    f"Credit: {data['final']}\n"
+    f"UTR: {utr}\n"
+    f"Verification ID: {vid}"
+)
         reply_markup=InlineKeyboardMarkup([[
             InlineKeyboardButton("✅ APPROVE", callback_data=f"approve_{vid}"),
             InlineKeyboardButton("❌ REJECT", callback_data=f"reject_{vid}")
@@ -2036,7 +2035,7 @@ async def handle_utr(update, context):
     add_back_button(keyboard, "main_menu")
     
     await update.message.reply_text(
-        f"{EnhancedUI.fancy_header('SUBMITTED', '✅', 40)}\n\n"
+        f"✅SUBMITTED\n\n"
         f"Your payment is being verified.\n"
         f"You'll be notified within 5-10 minutes.",
         parse_mode="HTML",
