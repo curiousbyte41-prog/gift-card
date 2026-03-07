@@ -1974,6 +1974,7 @@ async def handle_screenshot(update, context):
 # ===========================================================================
 
 async def handle_utr(update, context):
+    print("UTR STEP 1 - handler started")
     user = update.effective_user
     utr = update.message.text.strip()
     
@@ -1998,6 +1999,7 @@ async def handle_utr(update, context):
         return ConversationHandler.END
     
     data = context.user_data['verification']
+    print("UTR STEP 2 - validation passed")
     screenshot = context.user_data['screenshot']
     
     vid = db.create_verification(
@@ -2010,7 +2012,7 @@ async def handle_utr(update, context):
     )
     
     logger.info(f"Verification created: {vid} for user {user.first_name}")
-    
+    print("UTR STEP 3 - sending photo to admin")
     await context.bot.send_photo(
         chat_id=ADMIN_CHANNEL_ID,
         photo=screenshot,
@@ -2028,20 +2030,19 @@ async def handle_utr(update, context):
             InlineKeyboardButton("❌ REJECT", callback_data=f"reject_{vid}")
         ]])
     )
-    
+    print("UTR STEP 4 - photo sent")
     context.user_data.clear()
     
     keyboard = []
     add_back_button(keyboard, "main_menu")
     
     await update.message.reply_text(
-        f"✅SUBMITTED\n\n"
-        f"Your payment is being verified.\n"
-        f"You'll be notified within 5-10 minutes.",
-        parse_mode="HTML",
+    "✅ SUBMITTED\n\nYour payment is being verified.\nYou'll be notified within 5-10 minutes.",
+    reply_markup=InlineKeyboardMarkup(keyboard)
+    )
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
-    
+    print("UTR STEP 5 - finished")
     return ConversationHandler.END
 
 # ===========================================================================
