@@ -997,7 +997,6 @@ async def start(update, context):
     
 # Create user in database
 db_user = db.get_user(user.id)
-db_user = db_user or {"total_purchases": 0}
 if not db_user:
     referred = None
     if context.args and len(context.args) > 0 and context.args[0].startswith('ref_'):
@@ -1025,9 +1024,7 @@ if not db_user:
             pass
 
     db_user = db.get_user(user.id) or {"total_purchases": 0}
-else:
     db_user = db_user or {"total_purchases": 0}
-    
     # Show typing indicator
     await Animations.typing(update, 1)
     
