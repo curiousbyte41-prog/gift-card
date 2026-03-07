@@ -2035,15 +2035,13 @@ async def handle_utr(update, context):
     
     keyboard = []
     add_back_button(keyboard, "main_menu")
-    
     await update.message.reply_text(
     "✅ SUBMITTED\n\nYour payment is being verified.\nYou'll be notified within 5-10 minutes.",
     reply_markup=InlineKeyboardMarkup(keyboard)
-    )
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
-    print("UTR STEP 5 - finished")
-    return ConversationHandler.END
+)
+
+print("UTR STEP 5 - finished")
+return ConversationHandler.END
 
 # ===========================================================================
 # EMAIL HANDLER
