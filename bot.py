@@ -1298,159 +1298,146 @@ async def daily_reward(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ─────────────────────────────────────────────────────────────
-# PAYMENT FLOW HANDLERS - FIXED VERSION
+# FIXED PAYMENT FLOW HANDLERS
 # ─────────────────────────────────────────────────────────────
 async def handle_paid(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Entry point triggered by 'paid' callback inside ConversationHandler"""
+    """Entry point triggered by 'paid' callback"""
     query = update.callback_query
     await query.answer()
     user = update.effective_user
-
+    
     logger.info(f"💰 Paid button clicked by user {user.id}")
 
+    # Check if recharge data exists
     recharge = context.user_data.get("recharge")
     if not recharge:
-        # Session expired - simply go back to topup menu without error
+        logger.warning(f"⚠️ No recharge data for user {user.id}")
         await query.edit_message_text(
             "⏰ Session expired. Please select amount again.",
-            reply_markup=amount_keyboard(),
-            parse_mode=ParseMode.MARKDOWN
+            reply_markup=amount_keyboard()
         )
         return ConversationHandler.END
 
+    # Move to screenshot state
     await query.edit_message_text(
-        f"📸 *PAYMENT VERIFICATION*\n"
+        f"📸 *SEND PAYMENT SCREENSHOT*\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"Amount: *₹{recharge['amount']:,}*\n\n"
-        f"Please send a *screenshot* of your payment. 📷",
+        f"Amount: *₹{recharge['amount']:,}*\n"
+        f"You'll get: *₹{recharge['final']:,}*\n\n"
+        f"Please send a clear screenshot of your payment.",
         parse_mode=ParseMode.MARKDOWN
     )
+    
     return STATE_SCREENSHOT
 
 
 async def handle_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle screenshot upload"""
     user = update.effective_user
-    logger.info(f"📸 Screenshot received from user {user.id}")
-
+    
     if not update.message.photo:
         await update.message.reply_text(
-            "❌ Please send a *photo* (screenshot) of your payment.",
-            parse_mode=ParseMode.MARKDOWN
+            "❌ Please send a photo (screenshot of your payment)."
         )
         return STATE_SCREENSHOT
 
+    # Store screenshot
     photo = update.message.photo[-1]
-    context.user_data["screenshot_file_id"] = str(photo.file_id)
-    logger.info(f"✅ Screenshot stored: {photo.file_id[:20]}...")
+    context.user_data["screenshot"] = photo.file_id
+    logger.info(f"✅ Screenshot saved for user {user.id}")
 
     await update.message.reply_text(
         "✅ Screenshot received!\n\n"
-        "🔢 Now please enter your *UTR / Reference Number*\n"
-        "_(12-22 alphanumeric characters)_",
-        parse_mode=ParseMode.MARKDOWN
+        "🔢 Now please enter your UTR number:\n"
+        "_(12-22 digits/letters)_"
     )
     return STATE_UTR
 
 
 async def handle_utr(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle UTR number input"""
-    utr = update.message.text.strip().upper() if update.message.text else ""
+    """Handle UTR input"""
     user = update.effective_user
-    
-    logger.info(f"🔤 UTR received from user {user.id}: {utr[:10]}...")
+    utr = update.message.text.strip().upper()
 
     # Validate UTR
-    if not validate_utr(utr):
+    if not (12 <= len(utr) <= 22 and utr.isalnum()):
         await update.message.reply_text(
-            "❌ Invalid UTR format!\n"
-            "UTR must be 12-22 alphanumeric characters.\n"
+            "❌ Invalid UTR! Must be 12-22 alphanumeric characters.\n"
             "Please try again:"
         )
         return STATE_UTR
 
     # Check session data
     recharge = context.user_data.get("recharge")
-    screenshot_file_id = context.user_data.get("screenshot_file_id")
-    if not recharge or not screenshot_file_id:
-        # Session expired - go to main menu without error
-        keyboard = main_menu_keyboard()
+    screenshot = context.user_data.get("screenshot")
+    
+    if not recharge or not screenshot:
         await update.message.reply_text(
-            "⏰ Session expired. Please start again.",
-            reply_markup=keyboard
+            "⏰ Session expired. Please start again with /start"
         )
         return ConversationHandler.END
 
-    # Extract data
-    amount = recharge["amount"]
-    fee = recharge["fee"]
-    final = recharge["final"]
-
-    # Check duplicate UTR
-    if db.is_utr_duplicate(utr):
-        await update.message.reply_text(
-            "❌ This UTR has already been submitted.\n"
-            "Please check and try again with a different UTR."
-        )
-        return STATE_UTR
-
-    # Create verification
+    # Save to database
     try:
-        db.create_verification(user.id, amount, fee, final, utr, screenshot_file_id)
-        logger.info(f"✅ Verification created for user {user.id}")
+        db.create_verification(
+            user.id, 
+            recharge["amount"], 
+            recharge["fee"], 
+            recharge["final"], 
+            utr, 
+            screenshot
+        )
+        logger.info(f"✅ Verification saved for user {user.id}")
     except Exception as e:
-        logger.error(f"DB Error: {e}")
+        logger.error(f"Database error: {e}")
         await update.message.reply_text(
-            "❌ Database error. Please try again later."
+            "❌ Error saving verification. Please try again."
         )
         return ConversationHandler.END
 
     # Get verification ID
     ver = db.execute("SELECT id FROM verifications WHERE utr=?", (utr,), fetchone=True)
-    ver_id = ver["id"] if ver else 0
+    ver_id = ver["id"] if ver else "unknown"
 
-    # Send to admin channel
+    # Notify admin
     try:
-        admin_text = (
-            f"💳 *NEW PAYMENT VERIFICATION*\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"👤 User: {user.first_name} (@{user.username or 'N/A'})\n"
-            f"🆔 User ID: `{user.id}`\n"
-            f"💰 Amount: ₹{amount:,}\n"
-            f"💸 Fee: ₹{fee}\n"
-            f"✅ Credit: ₹{final}\n"
-            f"🔢 UTR: `{utr}`\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        caption = (
+            f"💳 NEW PAYMENT VERIFICATION\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"👤 User: {user.first_name}\n"
+            f"🆔 ID: {user.id}\n"
+            f"💰 Amount: ₹{recharge['amount']}\n"
+            f"✅ Credit: ₹{recharge['final']}\n"
+            f"🔢 UTR: {utr}"
         )
-        admin_keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ APPROVE", callback_data=f"approve_{ver_id}"),
-             InlineKeyboardButton("❌ REJECT", callback_data=f"reject_{ver_id}")],
-        ])
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("✅ APPROVE", callback_data=f"approve_{ver_id}"),
+            InlineKeyboardButton("❌ REJECT", callback_data=f"reject_{ver_id}")
+        ]])
+        
         await context.bot.send_photo(
             chat_id=ADMIN_CHANNEL_ID,
-            photo=screenshot_file_id,
-            caption=admin_text,
-            reply_markup=admin_keyboard,
-            parse_mode=ParseMode.MARKDOWN
+            photo=screenshot,
+            caption=caption,
+            reply_markup=keyboard
         )
-        logger.info("✅ Admin notification sent")
     except Exception as e:
-        logger.error(f"Admin channel error: {e}")
+        logger.error(f"Admin notification error: {e}")
 
-    # Clear session data
-    context.user_data.pop("recharge", None)
-    context.user_data.pop("screenshot_file_id", None)
+    # Clear session
+    context.user_data.clear()
 
-    # SUCCESS - No error message, just success!
+    # SUCCESS MESSAGE - NO ERROR!
     await update.message.reply_text(
-        f"✅ *PAYMENT SUBMITTED SUCCESSFULLY!*\n\n"
-        f"Amount: ₹{amount}\n"
+        f"✅ PAYMENT SUBMITTED SUCCESSFULLY!\n\n"
+        f"Amount: ₹{recharge['amount']}\n"
         f"UTR: {utr}\n\n"
-        f"Your payment is under review. You will be notified once approved.\n\n"
+        f"Your payment is under review. You'll be notified once approved.\n\n"
         f"Thank you for using Gift Card Bot! 🎁"
     )
-    
+
     return ConversationHandler.END
+
 
 # ─────────────────────────────────────────────────────────────
 # EMAIL HANDLER (for purchases)
