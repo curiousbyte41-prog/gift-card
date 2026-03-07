@@ -1,5 +1,7 @@
+cat > railway.json << 'EOF'
 {
   "build": {
     "builder": "DOCKERFILE"
   }
 }
+EOF
