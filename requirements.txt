@@ -1,3 +1,11 @@
+# Navigate to your bot folder
+cd giftcard-bot
+
+# Create correct requirements.txt
+cat > requirements.txt << 'EOF'
 python-telegram-bot==20.7
+pandas==2.0.3
 qrcode[pil]==7.4.2
 Pillow==10.0.0
+python-dotenv==1.0.0
+EOF
