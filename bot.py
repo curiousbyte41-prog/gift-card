@@ -1998,7 +1998,7 @@ async def handle_utr(update, context):
         return ConversationHandler.END
     
     data = context.user_data['verification']
-    screenshot = context.user_data['screenshot'].file_id
+    screenshot = context.user_data['screenshot']
     
     vid = db.create_verification(
         user.id, 
