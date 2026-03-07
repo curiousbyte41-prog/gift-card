@@ -943,7 +943,7 @@ def add_back_button(keyboard, callback_data="main_menu"):
 # LOADING ANIMATION
 # ===========================================================================
 
-LOADING_FRAMES = ["🎁", "🎀", "✨", "⭐", "🌟", "💫", "⚡", "💎"]
+LOADING_FRAMES = [...]
 
 async def show_loading(update, message_text="Processing", duration=2):
     """Show safe loading animation"""
