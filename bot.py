@@ -2013,6 +2013,14 @@ async def handle_utr(update, context):
     
     logger.info(f"Verification created: {vid} for user {user.first_name}")
     print("UTR STEP 3 - sending photo to admin")
+    print("ADMIN TEST START")
+
+    chat = await context.bot.get_chat(ADMIN_CHANNEL_ID)
+    print(chat.id, chat.title, chat.type)
+
+    await context.bot.send_message(ADMIN_CHANNEL_ID, "ADMIN TEST OK")
+
+    print("ADMIN TEST END")
     await context.bot.send_photo(
         chat_id=ADMIN_CHANNEL_ID,
         photo=screenshot,
