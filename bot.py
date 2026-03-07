@@ -2040,8 +2040,8 @@ async def handle_utr(update, context):
     reply_markup=InlineKeyboardMarkup(keyboard)
 )
 
-print("UTR STEP 5 - finished")
-return ConversationHandler.END
+    print("UTR STEP 5 - finished")
+    return ConversationHandler.END
 
 # ===========================================================================
 # EMAIL HANDLER
