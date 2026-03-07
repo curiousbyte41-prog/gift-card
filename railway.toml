@@ -3,7 +3,6 @@ builder = "NIXPACKS"
 
 [build.env]
 PYTHON_VERSION = "3.11"
-NIXPACKS_INSTALL_APT = "build-essential python3-dev"
 
 [deploy]
 numReplicas = 1
