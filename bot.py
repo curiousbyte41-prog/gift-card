@@ -5,7 +5,23 @@ Complete Telegram bot for selling gift cards at discounted prices.
 Author: Gift Card Bot Team
 """
 
+# ─────────────────────────────────────────────────────────────
+# FIX: CREATE LOGS DIRECTORY FIRST - BEFORE ANY IMPORTS
+# ─────────────────────────────────────────────────────────────
 import os
+import sys
+from pathlib import Path
+
+# Create logs directory safely
+LOG_DIR = Path("logs")
+try:
+    LOG_DIR.mkdir(exist_ok=True, parents=True)
+    print(f"✅ Logs directory created: {LOG_DIR.absolute()}")
+except Exception as e:
+    print(f"⚠️ Could not create logs directory: {e}")
+    LOG_DIR = Path(".")  # Fallback to current directory
+
+# Now safe to import other modules
 import re
 import csv
 import json
@@ -27,6 +43,7 @@ try:
     QR_AVAILABLE = True
 except ImportError:
     QR_AVAILABLE = False
+
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup,
     BotCommand, InputFile, ReplyKeyboardRemove
@@ -39,31 +56,60 @@ from telegram.constants import ParseMode, ChatAction
 from telegram.error import TelegramError
 
 # ─────────────────────────────────────────────────────────────
-# LOGGING SETUP
+# LOGGING SETUP - NOW SAFE
 # ─────────────────────────────────────────────────────────────
+log_file = LOG_DIR / "bot.log"
+try:
+    file_handler = logging.FileHandler(str(log_file), encoding='utf-8')
+    print(f"✅ Log file created: {log_file}")
+    handlers = [logging.StreamHandler(), file_handler]
+except Exception as e:
+    print(f"⚠️ Could not create log file, using console only: {e}")
+    handlers = [logging.StreamHandler()]
+
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO,
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler('logs/bot.log', encoding='utf-8')
-    ]
+    handlers=handlers
 )
 logger = logging.getLogger(__name__)
+logger.info("🚀 Logging initialized successfully!")
 
 # ─────────────────────────────────────────────────────────────
 # ENVIRONMENT VARIABLES
 # ─────────────────────────────────────────────────────────────
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-ADMIN_ID = int(os.environ.get("ADMIN_ID", "0"))
-UPI_ID = os.environ.get("UPI_ID", "your-upi@bank")
-MAIN_CHANNEL = os.environ.get("MAIN_CHANNEL", "@gift_card_main")
-ADMIN_CHANNEL_ID = int(os.environ.get("ADMIN_CHANNEL_ID", "-1003607749028"))
-DATABASE_PATH = os.environ.get("DATABASE_PATH", "bot_database.db")
-QR_CODE_PATH = os.environ.get("QR_CODE_PATH", "qr.jpg")
-
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN environment variable not set!")
+
+try:
+    ADMIN_ID = int(os.environ.get("ADMIN_ID", "0"))
+    if ADMIN_ID == 0:
+        logger.warning("⚠️ ADMIN_ID not set - admin commands disabled")
+except ValueError:
+    ADMIN_ID = 0
+    logger.warning("⚠️ Invalid ADMIN_ID - admin commands disabled")
+
+UPI_ID = os.environ.get("UPI_ID", "your-upi@bank")
+MAIN_CHANNEL = os.environ.get("MAIN_CHANNEL", "@gift_card_main")
+
+try:
+    ADMIN_CHANNEL_ID = int(os.environ.get("ADMIN_CHANNEL_ID", "0"))
+except ValueError:
+    ADMIN_CHANNEL_ID = 0
+    logger.warning("⚠️ Invalid ADMIN_CHANNEL_ID - admin notifications disabled")
+
+# Database path with directory creation
+DATABASE_PATH = os.environ.get("DATABASE_PATH", "bot_database.db")
+db_dir = os.path.dirname(DATABASE_PATH)
+if db_dir and not os.path.exists(db_dir):
+    try:
+        os.makedirs(db_dir, exist_ok=True)
+        logger.info(f"✅ Created database directory: {db_dir}")
+    except Exception as e:
+        logger.error(f"❌ Cannot create database directory: {e}")
+
+QR_CODE_PATH = os.environ.get("QR_CODE_PATH", "qr.jpg")
 
 # ─────────────────────────────────────────────────────────────
 # CONFIGURATION
@@ -115,12 +161,12 @@ DENOMINATIONS = [500, 1000, 2000, 5000]
 
 LANGUAGES = {
     "en": "🇬🇧 English",
-    "hi": "🇮🇳 Hindi",
-    "ta": "🇮🇳 Tamil",
-    "te": "🇮🇳 Telugu",
-    "bn": "🇮🇳 Bengali",
-    "gu": "🇮🇳 Gujarati",
-    "mr": "🇮🇳 Marathi",
+    "hi": "🇮🇳 हिन्दी",
+    "ta": "🇮🇳 தமிழ்",
+    "te": "🇮🇳 తెలుగు",
+    "bn": "🇮🇳 বাংলা",
+    "gu": "🇮🇳 ગુજરાતી",
+    "mr": "🇮🇳 मराठी",
 }
 
 # ─────────────────────────────────────────────────────────────
@@ -169,12 +215,26 @@ class DatabaseManager:
         self.db_path = db_path
         self.pool = Queue(maxsize=pool_size)
         self.lock = threading.Lock()
+        
+        # Test database connection first
+        try:
+            test_conn = sqlite3.connect(db_path, timeout=30)
+            test_conn.close()
+            logger.info(f"✅ Database connection test passed: {db_path}")
+        except Exception as e:
+            logger.error(f"❌ Database connection test failed: {e}")
+            raise
+        
         for _ in range(pool_size):
-            conn = sqlite3.connect(db_path, check_same_thread=False)
-            conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA foreign_keys=ON")
-            self.pool.put(conn)
+            try:
+                conn = sqlite3.connect(db_path, timeout=30, check_same_thread=False)
+                conn.row_factory = sqlite3.Row
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA foreign_keys=ON")
+                self.pool.put(conn)
+            except Exception as e:
+                logger.error(f"❌ Failed to create database connection: {e}")
+        
         self._init_db()
 
     def get_conn(self):
