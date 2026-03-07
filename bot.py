@@ -989,33 +989,44 @@ async def start(update, context):
     user = update.effective_user
     
     # React to message
-    await Animations.react(update, "👋")
+    # await Animations.react(update, "👋")
     
     if not all([BOT_TOKEN, ADMIN_ID, UPI_ID]):
         await update.message.reply_text(f"❌ *Configuration Error*", parse_mode=ParseMode.MARKDOWN)
         return
     
-    # Create user in database
-    db_user = db.get_user(user.id)
-    if not db_user:
-        referred = None
-        if context.args and context.args[0].startswith('ref_'):
-            try:
-                referred = int(context.args[0].replace('ref_', ''))
-                if referred == user.id: referred = None
-            except: pass
-        db.create_user(user.id, user.username, user.first_name, referred)
-        if WELCOME_BONUS > 0: 
-            db.update_balance(user.id, WELCOME_BONUS, 'bonus')
-        if referred:
-            db.process_referral(referred, user.id)
-            try:
-                await context.bot.send_message(referred,
-                    f"👥 *Referral Bonus!*\n\n{user.first_name} joined!\n+₹{REFERRAL_BONUS}",
-                    parse_mode=ParseMode.MARKDOWN)
-            except: pass
-    
-    db.update_active(user.id)
+# Create user in database
+db_user = db.get_user(user.id)
+db_user = db_user or {"total_purchases": 0}
+if not db_user:
+    referred = None
+    if context.args and len(context.args) > 0 and context.args[0].startswith('ref_'):
+        try:
+            referred = int(context.args[0].replace('ref_', ''))
+            if referred == user.id:
+                referred = None
+        except:
+            pass
+
+    db.create_user(user.id, user.username, user.first_name, referred)
+
+    if WELCOME_BONUS > 0:
+        db.update_balance(user.id, WELCOME_BONUS, 'bonus')
+
+    if referred:
+        db.process_referral(referred, user.id)
+        try:
+            await context.bot.send_message(
+                referred,
+                f"👥 *Referral Bonus!*\n\n{user.first_name} joined!\n+₹{REFERRAL_BONUS}",
+                parse_mode=ParseMode.MARKDOWN
+            )
+        except:
+            pass
+
+    db_user = db.get_user(user.id) or {"total_purchases": 0}
+else:
+    db_user = db_user or {"total_purchases": 0}
     
     # Show typing indicator
     await Animations.typing(update, 1)
