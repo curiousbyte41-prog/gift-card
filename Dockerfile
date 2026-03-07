@@ -1,4 +1,5 @@
-FROM python:3.9-slim
+cat > Dockerfile << 'EOF'
+FROM python:3.11-slim
 
 WORKDIR /app
 
@@ -9,3 +10,4 @@ COPY bot.py .
 COPY qr.jpg .
 
 CMD ["python", "bot.py"]
+EOF
