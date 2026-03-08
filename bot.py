@@ -1312,7 +1312,7 @@ async def handle_paid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     recharge = context.user_data.get("recharge")
     if not recharge:
         logger.warning(f"⚠️ No recharge data for user {user.id}")
-        await query.edit_message_text(
+        await query.message.reply_text(
             "⏰ Session expired. Please start again.",
             reply_markup=main_menu_keyboard()
         )
