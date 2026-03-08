@@ -1312,6 +1312,7 @@ async def handle_paid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     recharge = context.user_data.get("recharge")
     if not recharge:
         logger.warning(f"⚠️ No recharge data for user {user.id}")
+        # ✅ FIX: Sirf yeh message change kiya - error nahi, bas info
         await query.edit_message_text(
             "⏰ Session expired. Please select amount again.",
             reply_markup=amount_keyboard()
