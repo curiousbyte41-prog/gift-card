@@ -1390,35 +1390,39 @@ async def handle_utr(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return STATE_UTR
 
-# Save to database
-try:
-    # Ensure user exists in users table
-    db.execute(
-        "INSERT OR IGNORE INTO users (user_id) VALUES (?)",
-        (user.id,),
-        commit=True
-    )
+    # Save to database
+    try:
+        # Ensure user exists in users table
+        db.execute(
+            "INSERT OR IGNORE INTO users (user_id) VALUES (?)",
+            (user.id,),
+            commit=True
+        )
 
-    db.create_verification(
-        user.id,
-        recharge["amount"],
-        recharge["fee"],
-        recharge["final"],
-        utr,
-        screenshot
-    )
+        db.create_verification(
+            user.id,
+            recharge["amount"],
+            recharge["fee"],
+            recharge["final"],
+            utr,
+            screenshot
+        )
 
-    logger.info(f"✅ Verification saved for user {user.id}")
+        logger.info(f"✅ Verification saved for user {user.id}")
 
-except Exception as e:
-    logger.error(f"Database error: {e}")
-    await update.message.reply_text(
-        "❌ Database error. Please try again later."
-    )
-    return ConversationHandler.END
+    except Exception as e:
+        logger.error(f"Database error: {e}")
+        await update.message.reply_text(
+            "❌ Database error. Please try again later."
+        )
+        return ConversationHandler.END
 
     # Get verification ID
-    ver = db.execute("SELECT id FROM verifications WHERE utr=?", (utr,), fetchone=True)
+    ver = db.execute(
+        "SELECT id FROM verifications WHERE utr=?",
+        (utr,),
+        fetchone=True
+    )
     ver_id = ver["id"] if ver else 0
 
     # Send to admin channel
