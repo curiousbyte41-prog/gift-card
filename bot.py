@@ -1390,23 +1390,32 @@ async def handle_utr(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return STATE_UTR
 
-    # Save to database
-    try:
-        db.create_verification(
-            user.id, 
-            recharge["amount"], 
-            recharge["fee"], 
-            recharge["final"], 
-            utr, 
-            screenshot
-        )
-        logger.info(f"✅ Verification saved for user {user.id}")
-    except Exception as e:
-        logger.error(f"Database error: {e}")
-        await update.message.reply_text(
-            "❌ Database error. Please try again later."
-        )
-        return ConversationHandler.END
+# Save to database
+try:
+    # Ensure user exists in users table
+    db.execute(
+        "INSERT OR IGNORE INTO users (user_id) VALUES (?)",
+        (user.id,),
+        commit=True
+    )
+
+    db.create_verification(
+        user.id,
+        recharge["amount"],
+        recharge["fee"],
+        recharge["final"],
+        utr,
+        screenshot
+    )
+
+    logger.info(f"✅ Verification saved for user {user.id}")
+
+except Exception as e:
+    logger.error(f"Database error: {e}")
+    await update.message.reply_text(
+        "❌ Database error. Please try again later."
+    )
+    return ConversationHandler.END
 
     # Get verification ID
     ver = db.execute("SELECT id FROM verifications WHERE utr=?", (utr,), fetchone=True)
