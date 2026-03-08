@@ -1298,10 +1298,10 @@ async def daily_reward(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ─────────────────────────────────────────────────────────────
-# FIXED PAYMENT FLOW HANDLERS
+# FIXED PAYMENT FLOW HANDLERS - COMPLETELY REWRITTEN
 # ─────────────────────────────────────────────────────────────
 async def handle_paid(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Entry point triggered by 'paid' callback"""
+    """Handle 'I HAVE PAID' button click"""
     query = update.callback_query
     await query.answer()
     user = update.effective_user
@@ -1312,7 +1312,6 @@ async def handle_paid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     recharge = context.user_data.get("recharge")
     if not recharge:
         logger.warning(f"⚠️ No recharge data for user {user.id}")
-        # Return to main menu instead of showing error
         await query.edit_message_text(
             "⏰ Session expired. Please start again.",
             reply_markup=main_menu_keyboard()
@@ -1325,7 +1324,8 @@ async def handle_paid(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"Amount: *₹{recharge['amount']:,}*\n"
         f"You'll get: *₹{recharge['final']:,}*\n\n"
-        f"Please send a clear screenshot of your payment.",
+        f"Please send a clear screenshot of your payment.\n\n"
+        f"_(Send the photo now)_",
         parse_mode=ParseMode.MARKDOWN
     )
     
@@ -1335,6 +1335,7 @@ async def handle_paid(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle screenshot upload"""
     user = update.effective_user
+    logger.info(f"📸 Screenshot received from user {user.id}")
     
     if not update.message.photo:
         await update.message.reply_text(
@@ -1348,9 +1349,10 @@ async def handle_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"✅ Screenshot saved for user {user.id}")
 
     await update.message.reply_text(
-        "✅ Screenshot received!\n\n"
-        "🔢 Now please enter your UTR number:\n"
-        "_(12-22 digits/letters)_"
+        f"✅ Screenshot received!\n\n"
+        f"🔢 Now please enter your UTR number:\n"
+        f"_(12-22 digits/letters)_\n\n"
+        f"Example: SBIN1234567890"
     )
     return STATE_UTR
 
@@ -1359,6 +1361,8 @@ async def handle_utr(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle UTR input"""
     user = update.effective_user
     utr = update.message.text.strip().upper()
+    
+    logger.info(f"🔤 UTR received from user {user.id}: {utr[:10]}...")
 
     # Validate UTR
     if not (12 <= len(utr) <= 22 and utr.isalnum()):
@@ -1378,6 +1382,14 @@ async def handle_utr(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return ConversationHandler.END
 
+    # Check for duplicate UTR
+    if db.is_utr_duplicate(utr):
+        await update.message.reply_text(
+            "❌ This UTR has already been submitted.\n"
+            "Please check and try again with a different UTR."
+        )
+        return STATE_UTR
+
     # Save to database
     try:
         db.create_verification(
@@ -1392,18 +1404,18 @@ async def handle_utr(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Database error: {e}")
         await update.message.reply_text(
-            "❌ Error saving verification. Please try again."
+            "❌ Database error. Please try again later."
         )
         return ConversationHandler.END
 
     # Get verification ID
     ver = db.execute("SELECT id FROM verifications WHERE utr=?", (utr,), fetchone=True)
-    ver_id = ver["id"] if ver else "unknown"
+    ver_id = ver["id"] if ver else 0
 
-    # Notify admin
+    # Send to admin channel
     try:
         caption = (
-            f"💳 NEW PAYMENT VERIFICATION\n"
+            f"💳 *NEW PAYMENT VERIFICATION*\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"👤 User: {user.first_name}\n"
             f"🆔 ID: {user.id}\n"
@@ -1420,23 +1432,28 @@ async def handle_utr(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id=ADMIN_CHANNEL_ID,
             photo=screenshot,
             caption=caption,
+            parse_mode=ParseMode.MARKDOWN,
             reply_markup=keyboard
         )
+        logger.info("✅ Admin notification sent")
     except Exception as e:
         logger.error(f"Admin notification error: {e}")
+        # Still continue - user doesn't need to know
 
-    # Clear session
-    context.user_data.clear()
+    # Clear session data
+    context.user_data.pop("recharge", None)
+    context.user_data.pop("screenshot", None)
 
-    # SUCCESS MESSAGE - NO ERROR!
+    # SUCCESS MESSAGE
     await update.message.reply_text(
-        f"✅ PAYMENT SUBMITTED SUCCESSFULLY!\n\n"
+        f"✅ *PAYMENT SUBMITTED SUCCESSFULLY!*\n\n"
         f"Amount: ₹{recharge['amount']}\n"
         f"UTR: {utr}\n\n"
         f"Your payment is under review. You'll be notified once approved.\n\n"
         f"Thank you for using Gift Card Bot! 🎁"
     )
 
+    logger.info(f"✅ Payment flow completed for user {user.id}")
     return ConversationHandler.END
 
 
@@ -1704,7 +1721,7 @@ async def admin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(
                 chat_id=ver["user_id"],
                 text=(
-                    f"✅ PAYMENT APPROVED!\n\n"
+                    f"✅ *PAYMENT APPROVED!*\n\n"
                     f"Amount: ₹{ver['final_amount']} has been added to your wallet!\n"
                     f"UTR: {ver['utr']}\n\n"
                     f"Happy shopping! Use /start to continue. 🎁"
@@ -1727,11 +1744,10 @@ async def admin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(
                 chat_id=ver["user_id"],
                 text=(
-                    f"❌ PAYMENT REJECTED\n\n"
+                    f"❌ *PAYMENT REJECTED*\n\n"
                     f"Your payment of ₹{ver['amount']} was rejected.\n"
                     f"UTR: {ver['utr']}\n\n"
-                    f"If you believe this is an error, please contact support.\n"
-                    f"Use /start to continue."
+                    f"If you believe this is an error, please contact support."
                 )
             )
         except Exception as e:
