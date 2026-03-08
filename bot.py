@@ -1319,7 +1319,7 @@ async def handle_paid(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     # Move to screenshot state
-    await query.edit_message_text(
+    await query.message.reply_text(
         f"📸 *SEND PAYMENT SCREENSHOT*\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"Amount: *₹{recharge['amount']:,}*\n"
