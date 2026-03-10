@@ -116,8 +116,8 @@ QR_CODE_PATH = os.environ.get("QR_CODE_PATH", "qr.jpg")
 # ─────────────────────────────────────────────────────────────
 MIN_RECHARGE = 10
 MAX_RECHARGE = 10000
-FEE_PERCENT = 20
-FEE_THRESHOLD = 120
+FEE_PERCENT = 25
+FEE_THRESHOLD = 200
 REFERRAL_BONUS = 2
 WELCOME_BONUS = 5
 POSTS_PER_DAY = 12
@@ -141,7 +141,7 @@ BULK_DISCOUNTS = {1: 0, 3: 3, 5: 5, 10: 10, 25: 15, 50: 20}
 
 AMOUNT_BUTTONS = [
     [10, 20, 30, 50],
-    [120, 150, 200, 300],
+    [120, 150, 250, 300],
     [400, 500, 1000, 2000],
     [5000, 10000]
 ]
@@ -156,7 +156,7 @@ GIFT_CARDS = {
     "bigbasket":  {"name": "BIG BASKET", "emoji": "🛒", "full_emoji": "🛒🥬", "popular": False, "trending": False},
 }
 
-PRICES = {500: 100, 1000: 200, 2000: 400, 5000: 1000}
+PRICES = {500: 200, 1000: 400, 2000: 800, 5000: 2000}
 DENOMINATIONS = [500, 1000, 2000, 5000]
 
 LANGUAGES = {
